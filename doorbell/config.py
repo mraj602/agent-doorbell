@@ -41,6 +41,8 @@ DEFAULTS = {
     "lease": 900,
     "max_attempts": 3,
     "lifecycle_every": 10,
+    "renew_before": 3600,    # renew a sign-in this many seconds before it expires
+    "slack_client_id": os.environ.get("DOORBELL_SLACK_CLIENT_ID"),   # the Slack app for `doorbell login`
     "backlog_alert_after": 900,
     "message_retention": 7 * 86400,
     "ignore_subtypes": [
