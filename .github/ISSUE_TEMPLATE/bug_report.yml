@@ -1,0 +1,78 @@
+name: Bug report
+description: Something in Agent Doorbell does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Security problems go through private reporting instead (see SECURITY.md), not here.
+        Please remove Slack tokens, message text, channel names, user names and workspace names from anything you paste.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Daemon (doorbelld)
+        - CLI (doorbell)
+        - Queue, leases or redelivery
+        - Subscriptions
+        - Claude Code hooks
+        - init-agent
+        - dispatch
+        - Service install (systemd or launchd)
+        - Slack app manifest or setup
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `doorbell ...`
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `doorbell --version`. For a build from source, the commit.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system, version and Python version; how the daemon runs (foreground, systemd, launchd).
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: doorbell doctor output
+      description: Output of `doorbell doctor`, redacted.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines, redacted.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues.
+          required: true
+        - label: I removed tokens, message text and personal data from this report.
+          required: true

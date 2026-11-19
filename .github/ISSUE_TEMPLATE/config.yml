@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setup help
+    url: https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md#troubleshooting
+    about: Most setup problems are covered in the troubleshooting table.
+  - name: Report a security problem
+    url: https://github.com/mraj602/agent-doorbell/security/advisories/new
+    about: Report vulnerabilities privately, as SECURITY.md explains. Do not open a public issue.

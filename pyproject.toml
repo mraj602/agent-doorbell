@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-doorbell"
+dynamic = ["version"]
+description = "Agent Doorbell for Slack: a token-free watcher that wakes your AI agents only when a Slack message needs them."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6"]
+keywords = ["slack", "ai-agents", "claude-code", "codex", "automation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Communications :: Chat",
+]
+
+[project.urls]
+Homepage = "https://github.com/mraj602/agent-doorbell"
+Documentation = "https://github.com/mraj602/agent-doorbell/tree/main/docs"
+Issues = "https://github.com/mraj602/agent-doorbell/issues"
+
+[project.scripts]
+doorbell = "doorbell.cli:main"
+
+[tool.setuptools]
+packages = ["doorbell", "doorbell.templates"]
+
+[tool.setuptools.dynamic]
+version = {attr = "doorbell.__version__"}
+
+[tool.setuptools.package-data]
+"doorbell.templates" = ["*.md", "*.yaml"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
