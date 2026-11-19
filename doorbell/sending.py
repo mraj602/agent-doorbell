@@ -321,7 +321,7 @@ async def _op_logout(d, req):
         else:
             done.append(f"stopped using {path} (your own file; not revoked)")
     d.db.execute("UPDATE identities SET status='needs_login', error='signed out; run `doorbell login`', "
-                 "token_file=NULL WHERE user_id=?", (ident,))
+                 "token_file=NULL, mode='file' WHERE user_id=?", (ident,))
     d.slacks.pop(ident, None)
     store.audit(d.db, "logout", identity=ident)
     return {"signed_out": ident, "done": done,
@@ -344,7 +344,7 @@ async def _op_sender_remove(d, req):
     ident = identity_of(d, req)
     await check_password(d, ident, req.get("password"))   # else removing then re-adding would reset it
     if d.q1("SELECT 1 FROM identities WHERE user_id=? AND mode='sealed'", ident):
-            raise ValueError("in single-token mode this token is also the watcher's, so sending can't be removed "
+        raise ValueError("in single-token mode this token is also the watcher's, so sending can't be removed "
                          "on its own. Use `doorbell logout` to sign out completely; to watch read-only, sign in "
                          "with a read-only app, or revoke all your tokens for this app and run `doorbell login`")
     d.db.execute("DELETE FROM sender WHERE identity=?", (ident,))

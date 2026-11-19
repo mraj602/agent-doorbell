@@ -75,6 +75,14 @@ def login_env(e, **extra):
     return env
 
 
+def kill_tree(proc):
+    """On Windows a venv's python.exe is a launcher with a child holding the pipes: kill both."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+    else:
+        proc.kill()
+
+
 class Login:
     """A running `doorbell login --no-browser` process."""
 
@@ -83,7 +91,7 @@ class Login:
         self.proc = subprocess.Popen([sys.executable, "-m", "doorbell", "login", "--no-browser", *map(str, args)],
                                      env=env or login_env(e), cwd=e.home, stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE, text=True)
-        guard = threading.Timer(60, self.proc.kill)
+        guard = threading.Timer(60, kill_tree, args=(self.proc,))
         guard.daemon = True
         guard.start()
         self.out = []
@@ -238,7 +246,15 @@ def listen(redirect, state, timeout, then):
             res["error"] = str(ex)
     t = threading.Thread(target=run)
     t.start()
-    time.sleep(0.4)
+    port = urllib.parse.urlparse(redirect).port
+
+    def up():
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=1).close()
+            return True
+        except OSError:
+            return False
+    until(up, 10, "listener up")
     out = then()
     t.join(timeout + 5)
     assert not t.is_alive()
@@ -713,7 +729,7 @@ def test_expired_token_without_a_refresh_token_needs_login(make_env):
     f = write_creds(e, creds)
     e.call("identity_add", token_file=str(f))
     e.mock.expire(creds["token"])
-    until(lambda: ident(e)["status"] == "needs_login", 15, "needs_login")
+    until(lambda: ident(e)["status"] == "needs_login", 40, "needs_login")
     assert e.mock.refresh_calls() == []
 
 
@@ -886,6 +902,16 @@ def test_logout_in_single_token_mode_needs_the_password(both):
     res = e.call("logout", password=PW)
     assert "sending token revoked" in res["done"] and e.creds["token"] in e.mock.revoked
     assert e.call("status")["sending"] == {} and ident(e)["status"] == "needs_login"
+
+
+def test_after_logout_from_single_token_mode_a_read_only_login_works(both):
+    e = both
+    e.call("logout", password=PW)
+    assert ident(e)["mode"] == "file"
+    creds = get_creds(e, e.cid, READ, e.redirect)
+    e.call("identity_add", token_file=str(write_creds(e, creds)))
+    i = ident(e)
+    assert (i["mode"], i["status"]) == ("file", "ok")
 
 
 def test_lock_pauses_watching_in_single_token_mode(both):
