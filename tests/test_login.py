@@ -267,8 +267,11 @@ def test_listener_only_answers_its_path_and_keeps_waiting():
 def test_listener_rejects_a_state_mismatch():
     port = free_port()
     redirect = f"http://localhost:{port}/cb"
-    res, _ = listen(redirect, "RIGHT", 10, lambda: get(f"{redirect}?code=abc&state=WRONG"))
-    assert "code" not in res and "state" in res["error"].lower()
+    res, (status, body) = listen(redirect, "RIGHT", 2, lambda: get(f"{redirect}?code=abc&state=WRONG"))
+    # refused with 400, and the listener keeps waiting for its own response (here: until it times out),
+    # so another local process can't cancel the owner's sign-in
+    assert status == 400 and "state mismatch" in body
+    assert "code" not in res and "timed out" in str(res["error"]).lower()
 
 
 def test_listener_reports_access_denied():
@@ -468,11 +471,12 @@ def test_login_state_mismatch_is_refused(make_env):
     lg = Login(e, "--client-id", cid, "--redirect-uri", redirect)
     code = qs(e.mock.authorize(qs(lg.url)))["code"]
     status, _ = get(f"{redirect}?code={code}&state=forged")
-    assert status != 200
-    lg.finish()
-    assert lg.code != 0 and "state" in lg.stderr.lower()
+    assert status == 400                          # refused, and the login keeps waiting for its own response
     assert e.call("status")["identities"] == []
     assert not (e.home / "credentials").exists() or not list((e.home / "credentials").iterdir())
+    lg.approve()
+    lg.finish()
+    assert lg.code == 0, lg.stderr
 
 
 def test_login_access_denied(make_env):
@@ -704,7 +708,7 @@ def test_expired_token_without_a_refresh_token_needs_login(make_env):
     e = make_env()
     cid, _, redirect = new_app(e, READ)
     creds = get_creds(e, cid, READ, redirect)
-    creds["expires_at"] = time.time() + 1800      # claims to expire soon, but there is nothing to refresh with
+    creds["expires_at"] = time.time() + 3      # expires soon, and there is nothing to refresh with
     creds["refresh_token"] = None
     f = write_creds(e, creds)
     e.call("identity_add", token_file=str(f))
@@ -823,8 +827,11 @@ def test_a_login_file_token_that_gains_chat_write_stops_being_used(make_env):
     prime(e)
     name, dm, u = watch_dm(e)
     e.mock.issued[creds["token"]]["scopes"] = BOTH                   # approved chat:write elsewhere
+    f = e.home / "credentials" / f"{e.me}.json"
     until(lambda: ident(e)["status"] == "needs_login", 15, "needs_login after the token can post")
-    assert "can now post" in ident(e)["error"]
+    assert "able to post" in ident(e)["error"]
+    until(lambda: creds["token"] in e.mock.revoked, 10, "the token revoked")   # an agent can't pick it up
+    assert not f.exists()
     assert sum("login" in a.lower() for a in alerts(e)) == 1
 
 
@@ -917,3 +924,66 @@ def test_pasted_redirect_address_completes_the_login(make_env):
     oauth.read_pasted(redirect, lambda: next(lines))
     t.join(10)
     assert got.get("code") == qs(where)["code"]
+
+
+# ---------- security review fixes ----------
+def test_login_both_refuses_the_watchers_own_token(make_env):
+    """An agent can read the watch file; it must not seal that token as the sender."""
+    e = make_env()
+    cid, _, redirect = new_app(e, BOTH)
+    creds = get_creds(e, cid, READ, redirect)
+    e.call("identity_add", token_file=str(write_creds(e, creds)))
+    e.mock.issued[creds["token"]]["scopes"] = BOTH
+    assert "watcher's token" in err(e.call, "login_both", token_json=json.dumps(creds), password=PW)
+    assert e.call("status")["sending"] == {}
+
+
+def test_renewal_that_returns_a_token_that_can_post_retires_the_file(make_env):
+    e = make_env()
+    cid, _, redirect = new_app(e, BOTH, rotate=True, expires_in=5)
+    creds = get_creds(e, cid, READ, redirect)
+    f = write_creds(e, creds)
+    e.call("identity_add", token_file=str(f))
+    grant_more(e, ["chat:write"])
+    orig = e.mock.m_oauth_v2_access
+
+    def refresh_more(p):
+        out = orig(p)
+        if out.get("access_token"):
+            e.mock.issued[out["access_token"]]["scopes"] = BOTH
+            out["scope"] = ",".join(BOTH)
+        return out
+    e.mock.m_oauth_v2_access = refresh_more
+    until(lambda: ident(e)["status"] == "needs_login", 20, "needs_login after renewal")
+    assert not f.exists()
+
+
+def test_identity_add_cant_replace_single_token_mode(both):
+    e = both
+    assert "single-token" in err(e.add_identity)
+    assert ident(e)["mode"] == "sealed"
+
+
+def test_logout_only_forgets_a_token_file_you_made(make_env):
+    e = make_env()
+    e.add_identity()
+    res = e.call("logout")
+    assert any("not revoked" in x for x in res["done"]) and e.mock.revoked == set()
+    assert e.token_file.exists()
+
+
+def test_first_sender_setup_notifies_the_owner(make_env):
+    e = make_env()
+    cid, _, redirect = new_app(e, BOTH)
+    e.call("login_both", token_json=json.dumps(get_creds(e, cid, BOTH, redirect)), password=PW)
+    assert any("just set up" in a for a in alerts(e))
+
+
+def test_credentials_file_is_600_even_over_a_loose_leftover(tmp_path):
+    p = tmp_path / "credentials" / "U1.json"
+    p.parent.mkdir(mode=0o755)
+    oauth.write_creds(str(p), {"v": 1, "token": "xoxp-1"})
+    mode600(p)
+    if os.name != "nt":
+        assert stat.S_IMODE(os.stat(p.parent).st_mode) == 0o700
+    assert [x.name for x in p.parent.iterdir()] == ["U1.json"]

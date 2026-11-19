@@ -73,6 +73,9 @@ async def op_identity_add(d, req):
         raise ValueError(f"{path} is readable by other users; run: chmod 600 {path}")
     sl = Slack(read_token(path), d.cfg["slack_api_base"])
     info = await asyncio.to_thread(sl.call, "auth.test")
+    if d.q1("SELECT 1 FROM identities WHERE user_id=? AND mode='sealed'", info["user_id"]):
+        raise ValueError("this identity is in single-token mode (one sealed token watches and sends); run "
+                         "`doorbell logout` first (it needs the password)")
     if read_creds(path) and "chat:write" in (sl.scopes or []):
         raise ValueError("this sign-in can post messages (chat:write); Doorbell keeps such a token sealed, not in a "
                          "file. Run `doorbell login` in your terminal")

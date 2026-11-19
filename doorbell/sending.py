@@ -74,10 +74,12 @@ async def open_with_password(d, identity, password):
     """(credentials, encryption key, grant key). One check at a time, slower after each recent
     failure (2 s, 4 s, ... up to 60 s), and the owner is notified of repeated failures, so
     guessing is slow and visible."""
-    row = sender_row(d, identity)
-    if not row:
-        raise ValueError("sending isn't set up; run `doorbell sender add --token-file <file>`")
+    if not sender_row(d, identity):
+        raise ValueError("sending isn't set up; run `doorbell login --send` (or `doorbell sender add`)")
     async with d.password_lock:
+        row = sender_row(d, identity)
+        if not row:
+            raise ValueError("sending isn't set up")
         fails = recent_failures(d, identity)
         if fails:
             await asyncio.sleep(min(2 ** fails, 60))
@@ -125,12 +127,18 @@ def set_locked(d, ident):
     d.db.execute("UPDATE identities SET status='locked' WHERE user_id=? AND mode='sealed' AND status='ok'", (ident,))
 
 
-async def renew_sealed(d, ident, force=False):
+async def renew_sealed(d, ident, force=False, held=False):
     """Renew an unlocked sealed token that is about to expire, and re-seal it without the
-    password (the encryption key is in memory while unlocked). Returns False if it failed."""
+    password (the encryption key is in memory while unlocked). Returns False if it failed.
+    Runs under d.cred_lock, like every change to sealed credentials, so a password change,
+    replacement, lock or logout can't interleave with it."""
+    if not held:
+        async with d.cred_lock:
+            return await renew_sealed(d, ident, force, held=True)
     if ident not in d.sealed_keys:
         return True
-    enc, creds = d.sealed_keys[ident]
+    held_keys = d.sealed_keys[ident]
+    enc, creds = held_keys
     if not force and not oauth.due(creds, d.cfg["renew_before"]):
         return True
     try:
@@ -148,6 +156,9 @@ async def renew_sealed(d, ident, force=False):
         set_locked(d, ident)
         return False
     row = sender_row(d, ident)
+    if not row or d.sealed_keys.get(ident) is not held_keys or ident not in d.unlocked:
+        await asyncio.to_thread(oauth.revoke, d.cfg["slack_api_base"], new)   # state changed meanwhile
+        return True
     d.db.execute("UPDATE sender SET sealed=? WHERE identity=?", (seal.reseal(row["sealed"], enc, json.dumps(new)), ident))
     set_unlocked(d, ident, new, enc, d.unlocked[ident][1])
     store.audit(d.db, "token_renewed", identity=ident, sealed=True)
@@ -167,7 +178,7 @@ async def validate_sender(d, token, need_read=False):
 
 
 # ---------- owner: setup, lock state, grants ----------
-async def op_sender_add(d, req):
+async def _op_sender_add(d, req):
     if req.get("token_json"):
         creds, path = creds_of(req["token_json"]), None
     else:
@@ -176,14 +187,7 @@ async def op_sender_add(d, req):
             raise ValueError(f"{path} is readable by other users; run: chmod 600 {path}")
         creds = read_creds(path) or creds_of(read_token(path))
     token = creds["token"]
-    for w in d.q("SELECT token_file FROM identities WHERE token_file IS NOT NULL"):
-        try:
-            same = read_token(os.path.expanduser(w["token_file"])) == token
-        except OSError:
-            same = False
-        if same:
-            raise ValueError("this is the watcher's token; sending needs its own token "
-                             "(slack-app-manifest-sender.yaml)")
+    refuse_watcher_token(d, token)
     info, scopes = await validate_sender(d, token)
     ident = info["user_id"]
     idrow = d.q1("SELECT mode FROM identities WHERE user_id=?", ident)
@@ -194,7 +198,8 @@ async def op_sender_add(d, req):
         raise ValueError(f"{ident} is in single-token mode (one token watches and sends); to change its "
                          f"token run `doorbell login --for both`")
     old_key = None
-    if sender_row(d, ident):   # replacing the token needs the current password
+    first = not sender_row(d, ident)
+    if not first:   # replacing the token needs the current password
         _, old_key = await check_password(d, ident, req.get("old_password"))
     sealed = await asyncio.to_thread(seal.seal, plain_of(creds), req.get("password") or "")
     _, enc, grant_key = await asyncio.to_thread(seal.open_sealed, sealed, req["password"])
@@ -202,18 +207,22 @@ async def op_sender_add(d, req):
     resign_grants(d, ident, old_key, grant_key)
     set_unlocked(d, ident, creds, enc, grant_key)
     store.audit(d.db, "sender_add", identity=ident)
+    if first:
+        notify_first_sender(d, ident)
     return {"identity": ident, "unlocked": True, "can_react": "reactions:write" in scopes,
             "note": f"The token is now sealed in Doorbell. You can delete {path}." if path else
                     "The token is sealed in Doorbell; it was never written to a file."}
 
 
-async def op_login_both(d, req):
+async def _op_login_both(d, req):
     """Single-token mode: one token with read scopes and chat:write, sealed with the password,
     watches and sends. Watching pauses while Doorbell is locked (after a restart) and resumes
     from the cursors at `doorbell unlock`, so nothing is missed."""
     creds = creds_of(req["token_json"])
+    refuse_watcher_token(d, creds["token"])
     info, scopes = await validate_sender(d, creds["token"], need_read=True)
     ident = info["user_id"]
+    first = not sender_row(d, ident)
     old_key = None
     if sender_row(d, ident):
         _, old_key = await check_password(d, ident, req.get("old_password"))
@@ -226,10 +235,28 @@ async def op_login_both(d, req):
     resign_grants(d, ident, old_key, grant_key)
     set_unlocked(d, ident, creds, enc, grant_key)
     store.audit(d.db, "login_both", identity=ident)
+    if first:
+        notify_first_sender(d, ident)
     return {"identity": ident, "user": info["user"], "team": info["team"], "mode": "sealed", "unlocked": True,
             "can_react": "reactions:write" in scopes, **({"retired": retired} if retired else {}),
             "note": "One token watches and sends; it is sealed with your password and never written to a file. "
                     "After Doorbell restarts, watching waits for `doorbell unlock`, then catches up."}
+
+
+def refuse_watcher_token(d, token):
+    for w in d.q("SELECT token_file FROM identities WHERE token_file IS NOT NULL"):
+        try:
+            same = read_token(os.path.expanduser(w["token_file"])) == token
+        except (OSError, ValueError):
+            same = False
+        if same:
+            raise ValueError("this is the watcher's token; sending needs its own sign-in "
+                             "(`doorbell login --send`)")
+
+
+def notify_first_sender(d, ident):
+    d.notify_desktop(f"Sending through Doorbell was just set up for {ident}. If that wasn't you, run "
+                     f"`doorbell logout` and sign in again.")
 
 
 def login_file(d, path):
@@ -250,18 +277,21 @@ async def retire_file_token(d, ident):
     path = os.path.expanduser(row["token_file"])
     if not login_file(d, path):
         return f"{path} is no longer used; delete it if nothing else needs it (it may be able to post now)"
+    revoked = False
     try:
         creds = read_creds(path)
         if creds:
-            await asyncio.to_thread(oauth.revoke, d.cfg["slack_api_base"], creds)
-        os.unlink(path)
+            revoked = await asyncio.to_thread(oauth.revoke, d.cfg["slack_api_base"], creds)
+        os.unlink(os.path.realpath(path))
     except OSError:
         pass
     d.slacks.pop(ident, None)
-    return "the old watch token was revoked and its file deleted"
+    return ("the old watch token was revoked and its file deleted" if revoked else
+            "the old watch token's file was deleted, but Slack couldn't be reached to revoke it; it stays "
+            "valid until it expires (at most 12 hours)")
 
 
-async def op_logout(d, req):
+async def _op_logout(d, req):
     """Revoke Doorbell's tokens for an identity and forget them. Agents and cursors stay, so
     `doorbell login` later picks up where watching stopped."""
     ident = identity_of(d, req)
@@ -271,21 +301,25 @@ async def op_logout(d, req):
     done = []
     if sender_row(d, ident):
         creds, _, _ = await open_with_password(d, ident, req.get("password"))
-        await asyncio.to_thread(oauth.revoke, d.cfg["slack_api_base"], creds)
+        ok = await asyncio.to_thread(oauth.revoke, d.cfg["slack_api_base"], creds)
         d.db.execute("DELETE FROM sender WHERE identity=?", (ident,))
         d.db.execute("DELETE FROM grants WHERE identity=?", (ident,))
         set_locked(d, ident)
-        done.append("sending token revoked")
+        done.append("sending token revoked" if ok else "sending token forgotten (Slack couldn't be reached to "
+                                                       "revoke it)")
     if row["mode"] == "file" and row["token_file"]:
         path = os.path.expanduser(row["token_file"])
-        try:
-            creds = read_creds(path) or creds_of(read_token(path))
-            await asyncio.to_thread(oauth.revoke, d.cfg["slack_api_base"], creds)
-            done.append("watch token revoked")
-            if login_file(d, path):
-                os.unlink(path)
-        except (OSError, ValueError):
-            pass
+        if login_file(d, path):   # a token file you made yourself is only forgotten, never revoked
+            try:
+                creds = read_creds(path)
+                ok = creds and await asyncio.to_thread(oauth.revoke, d.cfg["slack_api_base"], creds)
+                done.append("watch token revoked" if ok else "watch token forgotten (Slack couldn't be reached "
+                                                             "to revoke it)")
+                os.unlink(os.path.realpath(path))
+            except OSError:
+                pass
+        else:
+            done.append(f"stopped using {path} (your own file; not revoked)")
     d.db.execute("UPDATE identities SET status='needs_login', error='signed out; run `doorbell login`', "
                  "token_file=NULL WHERE user_id=?", (ident,))
     d.slacks.pop(ident, None)
@@ -306,7 +340,7 @@ def resign_grants(d, ident, old_key, new_key):
             d.db.execute("DELETE FROM grants WHERE identity=? AND agent=?", (ident, g["agent"]))
 
 
-async def op_sender_remove(d, req):
+async def _op_sender_remove(d, req):
     ident = identity_of(d, req)
     await check_password(d, ident, req.get("password"))   # else removing then re-adding would reset it
     if d.q1("SELECT 1 FROM identities WHERE user_id=? AND mode='sealed'", ident):
@@ -319,16 +353,16 @@ async def op_sender_remove(d, req):
     return {"removed": ident}
 
 
-async def op_unlock(d, req):
+async def _op_unlock(d, req):
     ident = identity_of(d, req)
     creds, enc, grant_key = await open_with_password(d, ident, req.get("password"))
     set_unlocked(d, ident, creds, enc, grant_key)
-    renewed = await renew_sealed(d, ident)   # it may have expired while locked
+    renewed = await renew_sealed(d, ident, held=True)   # it may have expired while locked
     if renewed and creds.get("refresh_token") and ident in d.unlocked:
         try:   # Slack may have ended it early; one cheap check
             await asyncio.to_thread(slack_for(d, d.unlocked[ident][0]).call, "auth.test")
         except SlackError as e:
-            renewed = e.error == "token_expired" and await renew_sealed(d, ident, force=True)
+            renewed = e.error == "token_expired" and await renew_sealed(d, ident, force=True, held=True)
     store.audit(d.db, "unlock", identity=ident)
     if not renewed:
         raise ValueError("the password is right, but the stored sign-in has expired and couldn't be renewed; "
@@ -346,7 +380,7 @@ async def op_lock(d, req):
                                 if sealed_mode else {})}
 
 
-async def op_passwd(d, req):
+async def _op_passwd(d, req):
     ident = identity_of(d, req)
     creds, _, old_key = await open_with_password(d, ident, req.get("old_password"))
     sealed = await asyncio.to_thread(seal.seal, plain_of(creds), req.get("password") or "")
@@ -545,11 +579,16 @@ async def op_approve(d, req):
         raise ValueError(f"no pending draft #{req['id']}")
     creds, enc, grant_key = await open_with_password(d, r["identity"], req.get("password"))
     if creds.get("expires_at") and creds["expires_at"] - time.time() < 60:
-        if r["identity"] not in d.unlocked:
-            set_unlocked(d, r["identity"], creds, enc, grant_key)
-        if not await renew_sealed(d, r["identity"], force=True):
+        async with d.cred_lock:
+            was_locked = r["identity"] not in d.unlocked
+            if was_locked:
+                set_unlocked(d, r["identity"], creds, enc, grant_key)
+            ok = await renew_sealed(d, r["identity"], force=True, held=True)
+            creds = d.sealed_keys.get(r["identity"], (None, creds))[1]
+            if was_locked:
+                set_locked(d, r["identity"])   # approving one draft doesn't unlock Doorbell
+        if not ok:
             raise ValueError("the sending token has expired and couldn't be renewed; run `doorbell login` again")
-        creds = d.sealed_keys[r["identity"]][1]
     token = creds["token"]
     text = clean_text(d, req.get("text") or r["text"])
     # Claim the draft before posting, so two approvals can't both send it.
@@ -589,6 +628,36 @@ def sending_status(d):
             "drafts_pending": d.q1("SELECT count(*) n FROM drafts WHERE state='pending'")["n"],
             "send_requests": [{"agent": r["agent"], "why": r["why"]} for r in d.q("SELECT * FROM send_requests")]}
 
+
+
+async def op_sender_add(d, req):
+    async with d.cred_lock:
+        return await _op_sender_add(d, req)
+
+
+async def op_login_both(d, req):
+    async with d.cred_lock:
+        return await _op_login_both(d, req)
+
+
+async def op_logout(d, req):
+    async with d.cred_lock:
+        return await _op_logout(d, req)
+
+
+async def op_sender_remove(d, req):
+    async with d.cred_lock:
+        return await _op_sender_remove(d, req)
+
+
+async def op_unlock(d, req):
+    async with d.cred_lock:
+        return await _op_unlock(d, req)
+
+
+async def op_passwd(d, req):
+    async with d.cred_lock:
+        return await _op_passwd(d, req)
 
 OPS = {"sender_add": op_sender_add, "login_both": op_login_both, "logout": op_logout, "sender_remove": op_sender_remove, "unlock": op_unlock, "lock": op_lock,
        "passwd": op_passwd, "grant": op_grant, "revoke": op_revoke, "request_send": op_request_send,

@@ -14,6 +14,7 @@ import signal
 import secrets
 import shutil
 import subprocess
+import threading
 import time
 from collections import deque
 
@@ -43,6 +44,7 @@ class Daemon:
         self.sending_to = set()        # (identity, channel) while a post is in flight
         self.send_lock = asyncio.Lock()      # one send at a time: checks and the post are atomic
         self.password_lock = asyncio.Lock()  # one password check at a time (scrypt is 64 MB each)
+        self.cred_lock = asyncio.Lock()      # one change to sealed credentials at a time (renewal included)
         self.last_convlist = {}
         self.last_usergroups = {}
         self.last_userlist = {}
@@ -112,8 +114,21 @@ class Daemon:
             except OSError:
                 login_made = False
             if login_made:
-                self.needs_login(identity, "the watch token can now post messages (chat:write was allowed for "
-                                           "this app), so Doorbell stopped keeping it in a file")
+                self.retire_postable_file(identity, row["token_file"])
+
+    def retire_postable_file(self, identity, token_file):
+        """A login-made file token that can post: revoke it and delete the file at once, so
+        nothing on disk can post (an agent running as you could read the file)."""
+        path = os.path.expanduser(token_file)
+        try:
+            creds = read_creds(path)
+            if creds:
+                threading.Thread(target=oauth.revoke, args=(self.cfg["slack_api_base"], creds), daemon=True).start()
+            os.unlink(os.path.realpath(path))
+        except OSError:
+            pass
+        self.needs_login(identity, "the watch token became able to post messages (chat:write was allowed for this "
+                                   "app), so Doorbell revoked it and deleted its file")
 
     def needs_login(self, identity, why, command="doorbell login"):
         """The sign-in can't be renewed. Watching stops (cursors stay) until the person signs in again."""
@@ -132,6 +147,11 @@ class Daemon:
             except OSError:
                 continue
             forced = r["user_id"] in self.force_renew
+            if creds and creds.get("expires_at") and not creds.get("refresh_token"):
+                if forced or creds["expires_at"] <= time.time():   # nothing to renew with
+                    self.force_renew.discard(r["user_id"])
+                    self.needs_login(r["user_id"], "the sign-in expired and Slack gave no way to renew it")
+                continue
             if not creds or not creds.get("expires_at") or not (forced or oauth.due(creds, self.cfg["renew_before"])):
                 continue
             self.force_renew.discard(r["user_id"])
@@ -143,6 +163,10 @@ class Daemon:
             except oauth.LoginError as e:
                 store.audit(self.db, "renew_failed", identity=r["user_id"], error=str(e))
                 self.needs_login(r["user_id"], f"renewing the sign-in failed: {e}")
+                continue
+            if "chat:write" in (new.get("scopes") or []):
+                oauth.write_creds(path, new)          # so the retirement below revokes the new token
+                self.retire_postable_file(r["user_id"], r["token_file"])
                 continue
             oauth.write_creds(path, new)
             self.slacks.pop(r["user_id"], None)

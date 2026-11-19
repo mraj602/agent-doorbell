@@ -369,7 +369,8 @@ def login(args):
     say("Sign in to Slack and click Allow.")
     try:
         creds = oauth.login(client_id, {None: "watch"}.get(role, role), args.redirect_uri or oauth.DEFAULT_REDIRECT,
-                            args.team, args.timeout, not args.no_browser, api_base=cfg["slack_api_base"],
+                            args.team, args.timeout, not args.no_browser and role not in ("send", "both"),
+                            api_base=cfg["slack_api_base"],
                             announce=announce, paste=paste)
     except oauth.LoginError as e:
         raise SystemExit(f"error: {e}")
@@ -387,6 +388,7 @@ def login(args):
             res = call("identity_add", token_file=str(path))
         except SystemExit:
             path.unlink(missing_ok=True)
+            oauth.revoke(cfg["slack_api_base"], creds)
             raise
         say("Watching with a read-only token (it can't post). Doorbell renews it on its own.")
         return out(res)

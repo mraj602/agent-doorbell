@@ -84,10 +84,16 @@ def wait_for_code(redirect_uri, state, timeout=300):
                 self.end_headers()
                 return
             q = {k: v[0] for k, v in urllib.parse.parse_qs(r.query).items()}
-            if not secrets.compare_digest(q.get("state", ""), state):
-                result.setdefault("error", "the sign-in response didn't match this login (state mismatch); "
-                                           "run `doorbell login` again")
-                title, body = "Sign-in failed", "This response doesn't belong to the current login. Run it again."
+            if not secrets.compare_digest(q.get("state", "").encode(), state.encode()):
+                # Not this login's response (stale tab, or another local process): refuse it, keep waiting.
+                raw = PAGE.format(title="Sign-in failed", body="This response doesn't belong to the current "
+                                  "sign-in (state mismatch). Use the link the terminal printed.").encode()
+                self.send_response(400)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
             elif q.get("error"):
                 result.setdefault("error", f"Slack returned {q['error']}"
                                            + (" (you chose Cancel)" if q["error"] == "access_denied" else ""))
@@ -255,11 +261,23 @@ def due(creds, renew_before, now=None):
 
 def write_creds(path, creds):
     """Atomic write, mode 600."""
+    import tempfile
     path = os.path.expanduser(path)
-    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-    tmp = f"{path}.tmp-{os.getpid()}"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(creds, f)
-    os.replace(tmp, path)
+    folder = os.path.dirname(path)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    if os.name != "nt":
+        os.chmod(folder, 0o700)
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".creds-")   # new file, mode 600, never a leftover
+    try:
+        if os.name != "nt":
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(creds, f)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     return path
