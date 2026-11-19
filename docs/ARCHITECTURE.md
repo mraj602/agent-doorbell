@@ -64,8 +64,11 @@ Agent Doorbell splits the job: a deterministic watcher that costs nothing to run
 
 ## 3. Concepts
 
-- **Identity:** the Slack user whose view the watcher reads with, as a user token (`xoxp-`)
-  in a `chmod 600` file. The watcher sees exactly what you see in Slack, no more.
+- **Identity:** the Slack user whose view the watcher reads with, as a user token (`xoxp-`).
+  The token comes from `doorbell login` and is kept in one of two ways (the identity's
+  `mode`): `file`, a credentials file with mode 600, or `sealed`, encrypted with your password
+  (single-token mode, see [Login](#login-and-credentials)). The watcher sees exactly what you
+  see in Slack, no more.
 - **Agent:** a named consumer of a queue, usually one agent folder. Several agents can share
   one identity (say `main` for questions and `oncall` for one channel); a message that matches
   both is fetched once and queued for each.
@@ -196,7 +199,7 @@ only run `doorbell` commands can write drafts, and can post only if you granted 
 | Control | Where |
 |---|---|
 | The daemon never calls an LLM. The watcher token only needs read scopes; `identity add` rejects tokens missing scopes and warns about extra ones. | `server.py` |
-| The token lives in a file only you can read (`identity add` rejects group- or world-readable files on Linux and macOS). | `server.py` |
+| The token lives in a file only you can read (`identity add` rejects group- or world-readable files on Linux and macOS), or, if it can post, only sealed. `doorbell login` uses PKCE with no client secret, checks `state`, and its listener binds 127.0.0.1 and serves one request. | `cli.py`, `server.py` |
 | The daemon listens on 127.0.0.1 only, and every request must carry a random access key that the daemon writes to `endpoint.json` (mode 600) at start. Other users on the machine can't use it. | `daemon.py`, `server.py` |
 | An agent can only claim and ack its own items. | `server.py` |
 | Subscription changes the agent makes are audited and pop a desktop notification. | `server.py` |
@@ -229,6 +232,49 @@ agent only `Bash(doorbell *)`, and it can draft (you approve with `doorbell revi
 you run `doorbell grant <agent>` with your password, send. An agent that can run arbitrary
 commands as you is not contained by this; see [SECURITY.md](../SECURITY.md).
 
+### Login and credentials
+
+`doorbell login` is Slack OAuth with PKCE for a desktop-style app: a `localhost` redirect, no
+client secret.
+
+1. The CLI makes a random 64-character PKCE verifier and a `state`, and starts a listener on
+   `127.0.0.1` at the redirect URI (default `http://localhost:8765/doorbell/callback`).
+2. It prints the authorize link (`/oauth/v2/authorize` with `client_id`, `user_scope`,
+   `redirect_uri`, `state` and the S256 `code_challenge`) and opens the browser.
+3. The person clicks Allow. Slack redirects to the listener with `code` and `state`. The
+   listener checks `state`, answers with a small page, serves that one request and stops.
+   An `error` in the query (for example `access_denied`) ends the login with that error.
+4. The CLI posts `code`, `code_verifier`, `client_id` and `redirect_uri` to `oauth.v2.access`.
+   The response has the user token, its scopes and, for apps with token rotation or PKCE, a
+   refresh token and `expires_in`.
+
+What is stored depends on what the token can do. The credentials JSON is
+`{v, token, refresh_token, expires_at, client_id, user_id, team_id, scopes}`.
+
+| Login | Token | Stored as | Identity |
+|---|---|---|---|
+| `--for watch` | read scopes | `credentials/<user ID>.json`, mode 600, written atomically | `mode=file`, `token_file` points at it |
+| `--for send` | `chat:write` | sealed as the sender (like `sender add`) | unchanged |
+| `--for both` | read scopes + `chat:write` | sealed, as sender and as the identity's token. No file | `mode=sealed`, `locked` after each daemon start |
+
+The rule: **a token that can post is never stored in a plain file.** A watch login refuses a
+token with `chat:write`. A sealed identity is `locked` after a daemon start: it isn't polled,
+you get a notification, and `doorbell unlock` decrypts the token into memory and resumes
+polling from the saved cursors, so nothing is missed.
+
+**Renewal.** On each lifecycle tick the daemon looks at every credential whose `expires_at` is
+less than an hour away and calls `oauth.v2.access` with `grant_type=refresh_token` (and the
+`client_id`, no secret). Each refresh returns a new refresh token. The daemon writes the new
+credentials with a temporary file and `os.replace` (mode 600), or reseals them, and resets its
+cached Slack client. With PKCE, a refresh token lasts 30 days, so a machine off for longer
+needs `doorbell login` again. If renewal fails, or the token expired with no refresh token, the
+identity becomes `needs_login` with the error, polling for it stops, one notification fires,
+and `status` and `doctor` say to run `doorbell login`. Cursors are kept. A sealed credential
+can only be renewed while unlocked, so one that expired while locked is renewed at unlock.
+
+References: [Using PKCE](https://docs.slack.dev/authentication/using-pkce),
+[Installing with OAuth](https://docs.slack.dev/authentication/installing-with-oauth).
+
 ## 10. Storage
 
 SQLite in WAL mode at `doorbell.db` in the state folder: `~/.local/state/doorbell` on Linux
@@ -236,7 +282,7 @@ and macOS, `%LOCALAPPDATA%\doorbell` on Windows (override with `DOORBELL_HOME`).
 `identities`, `agents`, `conv` (cursor and cadence per conversation), `thread_watch`,
 `messages` (7-day cache), `items`, `item_msgs`, `deliveries`, `users_cache`,
 `usergroups_cache`, `api_calls` (24h), `audit`, and for sending `sender` (the sealed token),
-`grants`, `send_requests`, `drafts` and `sent`. The schema is in `doorbell/store.py`.
+`grants`, `send_requests`, `drafts` and `sent`. The schema is in `doorbell/store.py`. Credentials files from `doorbell login` are in `credentials/` in the state folder (mode 600).
 
 ## 11. Failure behaviour
 
@@ -248,6 +294,8 @@ and macOS, `%LOCALAPPDATA%\doorbell` on Windows (override with `DOORBELL_HOME`).
 | Laptop asleep or off | Cursors catch up on wake, within Slack's history limits (90 days visible on free plans). |
 | Slack rate limit (429) | `Retry-After` honoured; quiet conversations slow down first. |
 | Token revoked or scope removed | The identity is marked broken, polling for it stops, and you get a notification. |
+| Token renewal fails or the refresh token expired | The identity is `needs_login`, polling for it stops, you get one notification, and cursors are kept. Run `doorbell login`. |
+| Restart with a sealed identity (single-token mode) | The identity is `locked` until `doorbell unlock`, then polling resumes from the cursors. |
 | Backlog not consumed for 15 minutes | Desktop notification: "agent X isn't consuming". |
 
 ## 12. Why polling? Comparison with Slack events and webhooks
@@ -306,7 +354,10 @@ happened. With Agent Doorbell the same day with three real messages costs three 
   supported but not covered by CI or real-Slack tests yet.
 - **Sending is unlocked by hand after every restart.** The decrypted sender token is kept in
   memory only, so after a reboot granted agents draft instead of sending until you run
-  `doorbell unlock`.
+  `doorbell unlock`. In single-token mode (layout B) watching waits for the unlock too, then
+  catches up. To watch through reboots unattended and still send, use two apps (layout C).
+- **PKCE can't be turned off.** Enabling it makes the Slack app a public client, and only
+  Slack support can undo that. With PKCE, refresh tokens last 30 days.
 - **One person per daemon.** Several identities work technically, but each person should
   run their own daemon with their own app and token.
 - **Latency** of up to about 30 seconds for active conversations (longer for quiet ones when
@@ -326,4 +377,5 @@ happened. With Agent Doorbell the same day with three real messages costs three 
 - Socket Mode as an optional wake-up hint (lower latency, polling stays for catch-up).
 - `doorbell digest`: a daily summary of escalated and ignored items.
 - An output scan before replies (secrets, internal paths, URL allowlist) for agents with reply access.
-- A hub so a team can share one Slack app with per-person workers.
+- A hub so a team can share one Slack app with per-person workers. (0.3.0 already lets a team
+  share one app: each member signs in with `doorbell login` and runs their own daemon.)

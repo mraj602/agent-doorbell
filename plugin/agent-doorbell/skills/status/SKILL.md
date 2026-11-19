@@ -17,6 +17,13 @@ allowed-tools: Bash(doorbell status:*), Bash(doorbell log:*), Bash(doorbell doct
    - Pending and stuck items. For stuck items, suggest finding the cause, then
      `doorbell retry <seq>`.
    - API calls in the last hour.
+   - Each identity's `status`: `ok` is watching. `locked` means its token is sealed (layout
+     B, single-token mode) and the daemon restarted: it isn't polled until the owner runs
+     `doorbell unlock`, then it resumes from where it stopped and nothing is lost.
+     `needs_login` means Slack didn't renew the token (the refresh token expired or access was
+     revoked): the owner runs `doorbell login`; queued items and cursors are kept. `broken`
+     means the token was revoked: sign in again. Say what `token_expires_in_s` shows if it is
+     small and the daemon is running; it renews itself.
    - Sending, if `sending` isn't empty: whether it's unlocked (if not, the owner runs
      `doorbell unlock`), which agents are granted, `drafts_pending` (the owner runs
      `doorbell review`) and `send_requests` (the owner can run `doorbell grant <agent>`).
@@ -24,4 +31,4 @@ allowed-tools: Bash(doorbell status:*), Bash(doorbell log:*), Bash(doorbell doct
    for its `deliver` and `resolve` entries. Messages the user sent themselves are never
    queued, and bots are ignored unless listed in `allow_bots`.
 
-Don't change anything; this skill only reads.
+Don't change anything and don't run `doorbell login` or `unlock`; this skill only reads. Tell the person which command to run.

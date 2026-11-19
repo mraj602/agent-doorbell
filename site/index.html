@@ -211,7 +211,7 @@
         <div class="setup-head">
           <div>
             <h2 id="setup-h">Set up in 5 minutes</h2>
-            <p class="sub">The short version. The <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md">full guide</a> has a check after every step and is written so an AI agent can follow it for you. You need Python 3.10 or newer and a Slack workspace where you may create an app.</p>
+            <p class="sub">The short version. The <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md">full guide</a> has a check after every step and is written so an AI agent can follow it for you. You need Python 3.10 or newer and a Slack workspace. Anyone in the workspace can sign in; one person sets up the Slack app once.</p>
           </div>
           <aside class="shortcut" aria-labelledby="shortcut-h">
             <h3 id="shortcut-h">Using Claude Code?</h3>
@@ -229,22 +229,22 @@
             </div>
           </li>
           <li>
-            <h3>Create your own read-only Slack app and save its token</h3>
-            <p>At <a href="https://api.slack.com/apps">api.slack.com/apps</a> choose Create New App, From a manifest, and paste <a href="https://github.com/mraj602/agent-doorbell/blob/main/slack-app-manifest.yaml"><code>slack-app-manifest.yaml</code></a>. Install it and copy the <code>xoxp-</code> token. Save it to a file only you can read (Linux and macOS; the guide has the Windows lines):</p>
+            <h3>Start the watcher</h3>
             <div class="code">
-              <pre><code id="cmd-token">mkdir -p ~/.config/doorbell
-( umask 077; read -rsp 'Slack user token: ' t; echo; printf '%s\n' "$t" &gt; ~/.config/doorbell/slack-token )</code></pre>
-              <button type="button" class="copy" data-copy="cmd-token" aria-label="Copy token-saving command">Copy</button>
-            </div>
-          </li>
-          <li>
-            <h3>Start the watcher and add the token</h3>
-            <div class="code">
-              <pre><code id="cmd-start">doorbell service install
-doorbell identity add --token-file ~/.config/doorbell/slack-token</code></pre>
-              <button type="button" class="copy" data-copy="cmd-start" aria-label="Copy watcher commands">Copy</button>
+              <pre><code id="cmd-start">doorbell service install</code></pre>
+              <button type="button" class="copy" data-copy="cmd-start" aria-label="Copy watcher command">Copy</button>
             </div>
             <p class="check"><strong>Check:</strong> <code>doorbell status</code> shows <code>"state": "DORMANT"</code>. Dormant means no agents yet, so zero Slack API calls.</p>
+          </li>
+          <li>
+            <h3>Sign in to Slack</h3>
+            <p>You need the Client ID of a Doorbell Slack app in your workspace. It is not a secret, and there is no client secret. Ask whoever set the app up, or <a href="#layouts">create it</a> yourself. Run the command, open the link and click Allow. The token is never shown or pasted.</p>
+            <div class="code">
+              <pre><code id="cmd-login">doorbell login --client-id &lt;Client ID&gt;</code></pre>
+              <button type="button" class="copy" data-copy="cmd-login" aria-label="Copy login command">Copy</button>
+            </div>
+            <p class="check"><strong>Check:</strong> <code>doorbell doctor</code> shows <code>"token": "ok"</code> and <code>"missing_scopes": []</code>.</p>
+            <p class="fine">On a server or over SSH, add <code>--no-browser</code> and open the link through <code>ssh -L 8765:localhost:8765 user@box</code>.</p>
           </li>
           <li>
             <h3>Create an agent folder</h3>
@@ -268,6 +268,22 @@ doorbell identity add --token-file ~/.config/doorbell/slack-token</code></pre>
             <p class="check"><strong>Check:</strong> <code>doorbell status</code> shows your agent as <code>active</code> and the state as <code>POLLING</code>.</p>
           </li>
         </ol>
+        <div class="layouts" id="layouts">
+          <h3>Three ways to set up the Slack app</h3>
+          <p class="sub">A workspace admin creates the app once from a manifest and shares its Client ID. Turning on PKCE (the manifests do it) makes the app a public client, and only Slack support can undo that. A token that can post is never stored in a plain file. <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ORG-SETUP.md">Setup for admins</a></p>
+          <div class="tscroll" role="region" aria-label="App layouts" tabindex="0">
+            <table class="tbl compare">
+              <caption class="vh">The three Slack app layouts for Agent Doorbell</caption>
+              <thead><tr><td></td><th scope="col">A. One read-only app</th><th scope="col">B. One read+write app</th><th scope="col">C. Two apps</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Manifest</th><td><code>slack-app-manifest.yaml</code></td><td><code>slack-app-manifest-readwrite.yaml</code></td><td>A, plus <code>slack-app-manifest-sender.yaml</code></td></tr>
+                <tr><th scope="row">Login</th><td><code>doorbell login</code></td><td><code>doorbell login --for both</code></td><td><code>doorbell login</code>, then <code>doorbell login --for send</code></td></tr>
+                <tr><th scope="row">Agents send through Doorbell</th><td>No</td><td>Yes</td><td>Yes</td></tr>
+                <tr><th scope="row">After a reboot</th><td>Watching resumes</td><td>Locked until <code>doorbell unlock</code>; nothing is missed</td><td>Watching resumes; sending needs <code>unlock</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -352,14 +368,14 @@ doorbell identity add --token-file ~/.config/doorbell/slack-token</code></pre>
         <p class="sub">Give the agent nothing but <code>doorbell</code> commands. It writes drafts that you approve in your terminal, and sends directly only after you grant it with your password. The same on every harness.</p>
         <ol class="relay">
           <li>
-            <h3><span class="who">You, once</span> Add a sending token</h3>
-            <p>Create a second Slack app from <code>slack-app-manifest-sender.yaml</code>, save its token to a file, then in your own terminal:</p>
+            <h3><span class="who">You, once</span> Sign in for sending</h3>
+            <p>With a write app (layout C, <code>slack-app-manifest-sender.yaml</code>), in your own terminal. With one read+write app (layout B), use <code>doorbell login --for both</code> instead:</p>
             <div class="code">
               <pre><code id="cmd-send-add"># asks you for a new sending password
-doorbell sender add --token-file ~/.config/doorbell/sender-token</code></pre>
+doorbell login --for send --client-id &lt;write app's Client ID&gt;</code></pre>
               <button type="button" class="copy" data-copy="cmd-send-add" aria-label="Copy sender add command">Copy</button>
             </div>
-            <p class="fine">Then delete the token file: a readable token file is all an agent would need to set up sending of its own.</p>
+            <p class="fine">The token is sealed with your password and never written to a file. The older <code>doorbell sender add --token-file</code> still works.</p>
           </li>
           <li>
             <h3><span class="who">The agent</span> Writes a draft</h3>
@@ -379,7 +395,7 @@ doorbell unlock            # after a reboot</code></pre>
           </li>
         </ol>
         <ul class="guards">
-          <li><h3>Separate, sealed token</h3><p>Sending uses its own <code>chat:write</code> token, encrypted with your password (scrypt, AES-256-GCM) and decrypted only into the daemon's memory. After a restart Doorbell is locked until you run <code>doorbell unlock</code>.</p></li>
+          <li><h3>Separate, sealed token</h3><p>Sending uses its own <code>chat:write</code> token, encrypted with your password (scrypt, AES-256-GCM) and decrypted only into the daemon's memory. After a restart Doorbell is locked until you run <code>doorbell unlock</code> (with one read+write app, watching waits too, then catches up).</p></li>
           <li><h3>Bounded</h3><p>A granted agent can only answer in the conversation of one of its own open items, within an hourly limit, and can't <code>@channel</code>. A grant covers the agent's subscription as it was when you granted it.</p></li>
           <li><h3>Password, not prompts</h3><p>Approving, granting, unlocking and changing the token need the password, which agents never get. Revoking, rejecting and locking don't.</p></li>
         </ul>
@@ -421,9 +437,9 @@ doorbell unlock            # after a reboot</code></pre>
       <div class="wrap">
         <h2 id="privacy-h">Security and privacy</h2>
         <ul class="sec-list">
-          <li><h3>Read-only watching</h3><p>The daemon never calls an LLM, and watches with a Slack app that has read scopes only; <code>identity add</code> rejects tokens missing scopes and warns about extra ones. Optional sending uses a second token, sealed with your password.</p></li>
+          <li><h3>Read-only watching</h3><p>The daemon never calls an LLM, and watches with a token that has read scopes only (unless you chose the single read+write app, where the token is sealed); <code>identity add</code> rejects tokens missing scopes and warns about extra ones. Optional sending uses a second token, sealed with your password.</p></li>
           <li><h3>Local only</h3><p>The daemon listens on 127.0.0.1 and every request carries a random access key from a mode-600 file, so other users on the machine cannot use it. No cloud service, no public URL.</p></li>
-          <li><h3>Your token stays in a file only you can read</h3><p><code>identity add</code> refuses group- or world-readable files on Linux and macOS. The setup skill never asks for it in chat.</p></li>
+          <li><h3>You never handle the token</h3><p><code>doorbell login</code> uses OAuth with PKCE and no client secret; its listener binds 127.0.0.1 and checks <code>state</code>. A read-only token is saved in a file only you can read (mode 600). The setup skill never asks for a token in chat.</p></li>
           <li><h3>It never writes your harness settings</h3><p>Doorbell does not touch your agent's permission rules. Slack write access through Doorbell exists only if you set up sending and approve or grant with your password.</p></li>
           <li><h3>Short memory</h3><p>Messages are kept for 7 days, then deleted. Subscription changes an agent makes are audited and pop a notification, and an agent can only claim and ack its own items.</p></li>
           <li class="main-risk"><h3>Prompt injection is the main risk</h3><p>The instructions tell the agent to treat message text as data and to escalate anything that commits you. That helps but is not a guarantee, which is why the hard limit is the agent's tool permissions.</p></li>
@@ -441,7 +457,7 @@ doorbell unlock            # after a reboot</code></pre>
           <details><summary>Does it need a paid Slack plan or admin rights?</summary><p>Free plans work. Some workspaces require an admin to approve new apps; if yours does, the install step asks for approval.</p></details>
           <details><summary>Can it send messages for me?</summary><p>Two ways. Your agent can reply with its own Slack tool, within the permissions you gave it. Or, since 0.2.0, through Doorbell: the agent writes drafts you approve with <code>doorbell review</code>, and agents you grant with your password can send directly into the conversations that reached them.</p></details>
           <details><summary>Live session or headless dispatch?</summary><p>Headless is recommended for anything that runs for days: each batch starts a fresh, small context. A live session is good for watching the agent work, but its cost per batch grows with the session's age. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/RUNNING.md">RUNNING.md</a>.</p></details>
-          <details><summary>How many people can share one daemon?</summary><p>One person per daemon, with their own Slack app and token. Several agents can share it.</p></details>
+          <details><summary>How many people can share one daemon?</summary><p>One person per daemon. Everyone in a workspace can use the same Slack app: each person runs <code>doorbell login</code> and gets their own token. Several agents can share one daemon.</p></details>
           <details><summary>What are the known limits?</summary><p>Linux is the tested platform; macOS and Windows should work but are not covered by CI yet. Only messages are watched, not search, files or canvases. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ARCHITECTURE.md#14-limits-and-known-gaps">Limits and known gaps</a>.</p></details>
         </div>
       </div>
