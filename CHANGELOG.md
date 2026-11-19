@@ -6,6 +6,15 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Project page: describes every feature and the logic in plain terms (watching, agents,
+  replying, sign-in, the three Slack app layouts, the security model, when not to use it),
+  without version labels. The setup screenshot shows `doorbell login`.
+- README links to the project page and no longer states a version in its status line.
+- Architecture: a complete "Slack access logic" section (decision flow of `doorbell login`,
+  renewal rules, the scope guard, lock and unlock, logout).
+
 ## [0.3.0] - 2026-11-20
 
 Sign in to Slack with one command instead of copying a token.

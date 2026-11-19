@@ -96,10 +96,6 @@ h3{font-size:1.125rem;font-weight:600}
 .hero a{color:var(--night-text)}
 .hero-grid{display:grid;gap:44px;grid-template-columns:minmax(0,1fr);align-items:center}
 @media (min-width:960px){.hero-grid{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:64px}}
-.news{margin:0 0 26px}
-.news a,.news.static{display:inline-flex;align-items:center;gap:10px;padding:4px 14px 4px 4px;border:1px solid var(--night-line);border-radius:999px;font-size:.92rem;text-decoration:none;color:var(--night-text);background:var(--night-deep)}
-.news a:hover{border-color:var(--night-accent)}
-.ver{background:var(--coral);color:var(--coral-ink);font:600 .8rem var(--mono);padding:2px 9px;border-radius:999px}
 .hero h1{color:var(--night-text);margin-bottom:24px}
 .lead{font-size:clamp(1.12rem,1rem + .45vw,1.3rem);line-height:1.55;color:var(--night-muted);max-width:44ch;margin:0 0 30px}
 .code-hero{max-width:30rem;margin-bottom:22px}
@@ -258,7 +254,6 @@ h3{font-size:1.125rem;font-weight:600}
 .night a{color:var(--night-accent)}
 .night :not(pre)>code{background:var(--night-deep);color:var(--night-text)}
 .night .code pre{background:var(--night-deep);border-color:var(--night-line)}
-.night .news.static{margin-bottom:22px}
 .night .fine{color:var(--night-muted)}
 .relay{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:0}
 .relay li{display:grid;gap:8px 40px;grid-template-columns:minmax(0,1fr);padding:26px 0;border-top:1px solid var(--night-line)}
@@ -316,6 +311,36 @@ h3{font-size:1.125rem;font-weight:600}
   .top nav{margin:4px -18px 0;padding:0 12px 6px}
 }
 
-.layouts{margin-top:48px;max-width:980px}
-.layouts h3{font-size:1.25rem;margin:0 0 .5em}
-.layouts .sub{margin:0 0 1.2em}
+
+/* Features, sign-in and the Slack app plan */
+.feat-grid{display:grid;gap:24px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:960px){.feat-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px 26px;min-width:0}
+.card h3{font-size:1.4rem;margin-bottom:.5em}
+.card h4{font-size:1rem;margin:22px 0 8px}
+.card-lead{margin:0 0 .6em;color:var(--muted)}
+.rules{list-style:none;margin:0;padding:0}
+.rules li{padding:10px 0;border-top:1px solid var(--border);font-size:.98rem;line-height:1.55}
+.rules li:first-child{border-top:0;padding-top:0}
+.rules li:last-child{padding-bottom:0}
+.rules strong{font-weight:600}
+.card .fine{margin:16px 0 0}
+.small-tbl{font-size:.9rem;min-width:420px}
+.small-tbl th,.small-tbl td{padding:8px 10px}
+.small-tbl tbody th{font-weight:400}
+.two{display:grid;gap:36px 56px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:960px){.two{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.two>*{min-width:0}
+.gap{margin-top:clamp(36px,5vw,56px)}
+h3.gap{margin-bottom:.4em}
+.sub.narrow{margin-bottom:1.2rem}
+.plain{margin:0 0 1em;padding-left:1.3em}
+.plain li{margin:0 0 .6em;padding-left:.2em}
+.plan li{padding:24px 26px 22px}
+.plan h3{display:block}
+.plan dd{margin:2px 0 12px}
+.after-steps{margin:20px 0 0;max-width:72ch;color:var(--muted)}
+.callout{border-left:4px solid var(--accent);background:var(--surface);border-radius:0 14px 14px 0;padding:20px 24px}
+.callout h3{margin-bottom:.5em}
+.notfor{margin-top:36px;max-width:78ch;border-left-color:var(--coral)}
+td code,th code{overflow-wrap:anywhere}

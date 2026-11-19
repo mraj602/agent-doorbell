@@ -207,7 +207,7 @@ already set, it asks for the current one too.
 | `--for watch\|send\|both` | Choose what to sign in for instead of letting Doorbell decide. |
 | `--redirect-uri URI` | Default `http://localhost:8765/doorbell/callback`. Must be under a redirect URL registered in the app. Doorbell listens on that port. |
 | `--team T` | Pick the workspace when you belong to several. |
-| `--no-browser` | Print the link and don't open a browser. |
+| `--no-browser` | Print the link and don't open a browser. (`--send`, `--for send` and `--for both` never open one.) |
 | `--timeout 300` | Seconds to wait for you to click Allow. |
 
 ### On a server, over SSH, or headless
@@ -228,14 +228,15 @@ which never leaves the box. The other way is a tunnel from your laptop,
 ### How tokens last
 
 Tokens from a localhost sign-in **rotate**. They expire after 12 hours and come with a refresh
-token. Doorbell renews them on its own, with no client secret: at most once per half of a
-token's life, and when less than an hour is left. With PKCE, refresh tokens expire after 30
+token. Doorbell renews them on its own, with no client secret: when less than an hour is
+left or less than half of its life is left, whichever is smaller, so at most once per half life. With PKCE, refresh tokens expire after 30
 days, so if Doorbell doesn't run for 30 days, sign in again.
 
 If renewal fails, the identity shows `"status": "needs_login"` and you get one notification.
 Cursors and queued items are kept, so after `doorbell login` it catches up.
 
-A sealed token is renewed while Doorbell is unlocked. If it expired while locked,
+A token with an expiry but no refresh token can't be renewed: at expiry the identity becomes
+`needs_login`. A sealed token is renewed while Doorbell is unlocked. If it expired while locked,
 `doorbell unlock` renews it.
 
 ### Status of an identity

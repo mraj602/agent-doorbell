@@ -1,5 +1,7 @@
 # Agent Doorbell for Slack
 
+**Website: <https://mraj602.github.io/agent-doorbell/>**
+
 [![ci](https://github.com/mraj602/agent-doorbell/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mraj602/agent-doorbell/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/agent-doorbell.svg)](https://pypi.org/project/agent-doorbell/)
 [![Python](https://img.shields.io/pypi/pyversions/agent-doorbell.svg)](https://pypi.org/project/agent-doorbell/)
@@ -159,7 +161,7 @@ The full comparison of about 20 tools, use cases and sources is in
 
 ## Status and limits
 
-Version 0.3.0: early. Linux is the tested platform; macOS and Windows should work
+Early release. Linux is the tested platform; macOS and Windows should work
 but are not covered by CI yet. One person per daemon. Replies arrive
 within about 30 seconds, not instantly. See
 [Limits and known gaps](docs/ARCHITECTURE.md#14-limits-and-known-gaps).
