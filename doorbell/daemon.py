@@ -15,6 +15,7 @@ import secrets
 import shutil
 import subprocess
 import threading
+import sys
 import time
 from collections import deque
 
@@ -729,7 +730,9 @@ def _exit_on_sigterm(signum, frame):
 
 def main():
     if already_running():
-        raise SystemExit(f"error: doorbelld is already running ({config.ENDPOINT})")
+        # Exit 0: a service manager must not restart a second copy over and over.
+        print(f"doorbelld is already running ({config.ENDPOINT})", file=sys.stderr)
+        raise SystemExit(0)
     # Service managers stop the daemon with SIGTERM; turn it into a normal exit so the endpoint
     # file is removed and clients don't try a stale port.
     signal.signal(signal.SIGTERM, _exit_on_sigterm)
