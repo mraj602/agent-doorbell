@@ -58,7 +58,7 @@ your local repos, and usually need paid plans and a Slack admin.
 | **A coordinator agent that routes to project agents and applies policy** | **Agent Doorbell** | OpenClaw (static bindings); n8n (build it yourself) | Agents register and deregister themselves, each with its own subscription and queue; drafts, grants and the audit log give a policy layer (see [section 4](#4-use-cases-in-more-detail)) |
 | **Two people's agents talking to each other** | **Doorbell on both sides** (experimental) | OpenClaw in user-token mode; two Bolt bots | With user tokens, each side sees the other's messages as a person's message. Needs loop rules (see below) |
 | **Free Slack workspace, no webhooks, no missed messages** | **Agent Doorbell** | Zapier (100 tasks/month), Make (polling, reduced rate limit), Devin (works on Free Slack, paid product) | The earlier Claude in Slack app needs paid Slack; Claude Tag needs a Claude Team/Enterprise plan; Socket Mode bots miss messages while down |
-| **Replies should look like you typed them** | **Doorbell 0.2.0 sending**, OpenClaw user-token mode, Make user connections | A Slack draft (agent writes it, you send it) | The Slack MCP / Claude connector, Claude, Cursor, Devin, ChatGPT and Copilot are all visibly AI |
+| **Replies should look like you typed them** | **Doorbell sending**, OpenClaw user-token mode, Make user connections | A Slack draft (agent writes it, you send it) | The Slack MCP / Claude connector, Claude, Cursor, Devin, ChatGPT and Copilot are all visibly AI |
 | **Replies should say they're from AI** | **Doorbell with the agent's Slack MCP tool** ("Sent using @Claude"), or Doorbell's `send_footer` | Claude in Slack, Claude Tag | Transparency with your colleagues |
 | **A bot the whole team @mentions; instant answers** | Claude Tag, Devin, Cursor, a Bolt bot | — | Doorbell is one person's watcher, with ~30 s latency |
 | **Nothing running on my machine** | Claude Tag routines, Devin, Copilot, Zapier | — | Doorbell needs a machine that is on some of the time (it catches up when it's back) |
@@ -116,7 +116,7 @@ plan.
 
 Both work, and you can mix them per agent:
 
-| | **Agent's Slack MCP tool** (e.g. the Claude Slack connector) | **Doorbell sending** (0.2.0) | **Draft** |
+| | **Agent's Slack MCP tool** (e.g. the Claude Slack connector) | **Doorbell sending** | **Draft** |
 |---|---|---|---|
 | Who it appears from | You, plus a "Sent using @Claude" footer that can't be turned off | You, like a message you typed. Add a footer with `send_footer` if you want one | You, when you send it |
 | Who decides what may be sent | Your harness's permissions | Doorbell: your password, per-agent grants, hourly limit, only into conversations that reached that agent | You, every time |

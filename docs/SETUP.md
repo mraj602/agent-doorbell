@@ -62,7 +62,7 @@ pipx install agent-doorbell
 # or the latest from GitHub: pipx install git+https://github.com/mraj602/agent-doorbell
 ```
 
-**Check:** `doorbell --version` prints `doorbell 0.1.0` or newer.
+**Check:** `doorbell --version` prints a version number.
 
 ## 2. Start the watcher
 
@@ -477,7 +477,7 @@ watcher recognises those replies as the agent's, not yours.
 
 ## Sending through Doorbell (optional)
 
-New in 0.2.0. Lets agents answer through Doorbell instead of their own Slack tool, with the
+Lets agents answer through Doorbell instead of their own Slack tool, with the
 policy enforced by Doorbell and your password, the same on every harness. The watcher keeps
 its read-only token (layouts A and C), or one sealed token does both (layout B).
 
@@ -523,8 +523,6 @@ sends at once; in layout B it also pauses watching until `doorbell unlock`.
 sealed token and every grant. In layout B it refuses, because that token is also the
 watcher's: switch watching to a read-only token first (a read-only app, or a sign-in after
 every token for the app was revoked). `doorbell logout` revokes and forgets the tokens.
-
-Fixed in 0.3.0: in 0.2.0, `doorbell sender remove` didn't delete the sealed token.
 
 | Command | Who | Password |
 |---|---|---|
