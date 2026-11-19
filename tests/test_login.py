@@ -67,10 +67,25 @@ def qs(url):
     return {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(url).query).items()}
 
 
+def loopback(url):
+    """Browsers reach localhost on whichever loopback answers; urllib tries each address the hosts
+    file lists for localhost in turn (macOS CI images list fe80::1%lo0, which hangs), so go
+    straight to 127.0.0.1 like a browser ends up doing."""
+    return url.replace("://localhost:", "://127.0.0.1:")
+
+
+class LoopbackRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return super().redirect_request(req, fp, code, msg, headers, loopback(newurl))
+
+
+BROWSER = urllib.request.build_opener(LoopbackRedirects)
+
+
 def get(url):
     """The browser following a link. Returns (status, body); HTTP errors are returned, not raised."""
     try:
-        with urllib.request.urlopen(url, timeout=10) as r:
+        with BROWSER.open(loopback(url), timeout=10) as r:
             return r.status, r.read().decode()
     except urllib.error.HTTPError as ex:
         return ex.code, ex.read().decode()
