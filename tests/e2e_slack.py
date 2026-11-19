@@ -10,8 +10,8 @@ Setup:
     opened that DM once (send the bot a message) so it appears in conversations.list.
 
 Run:
-  DOORBELL_E2E_USER_TOKEN_FILE=~/secrets/slack-user-token.env \\
-  DOORBELL_E2E_BOT_TOKEN_FILE=~/secrets/slack-bot-token.env \\
+  DOORBELL_E2E_USER_TOKEN_FILE=/path/to/throwaway-user-token \\
+  DOORBELL_E2E_BOT_TOKEN_FILE=/path/to/throwaway-bot-token \\
   DOORBELL_E2E_ME=U0123ABCDEF \\
   python tests/e2e_slack.py
 

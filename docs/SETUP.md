@@ -125,6 +125,10 @@ Then run `doorbell doctor`: your identity shows `"token": "ok"` and `"missing_sc
 doorbell init-agent ~/doorbell-agents/main --owner "Your Name"
 ```
 
+Use a folder of its own, not a project repo. Repos often have their own `AGENTS.md` or
+`CLAUDE.md`, which `init-agent` won't overwrite, so the agent would miss its Doorbell
+instructions. Give the agent read access to repos when it runs instead (step 6).
+
 It writes:
 
 | File | Purpose |
@@ -306,6 +310,10 @@ How they share the watcher:
   acks only its own items, so one agent's reply doesn't resolve another's. A reply you type
   yourself resolves the matching items of every agent.
 - Agents come and go independently: one going inactive doesn't affect the others.
+- `mentions_of_me` and `threads_im_in` apply to every conversation the daemon polls,
+  including ones polled only for another agent. If `oncall` polls `#incidents` and `main` has
+  `mentions_of_me: true`, an @mention of you in `#incidents` reaches both. Turn it off in one
+  of them if you don't want that.
 
 ### `sub.yaml` keys
 
