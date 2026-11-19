@@ -46,8 +46,9 @@ You need:
   Claude Code (`/plugin install slack@claude-plugins-official`, then sign in when it asks).
   If you only want triage (summaries of what needs you), no Slack tool is needed.
 
-Agent Doorbell only reads Slack. It never posts. Replies, if any, come from your agent's own
-Slack tool, under whatever rules your agent's harness enforces.
+Agent Doorbell watches Slack with a read-only token. Replies come either from your agent's
+own Slack tool, under the rules your agent's harness enforces, or, if you set it up, through
+Doorbell itself with your approval ([Sending through Doorbell](#sending-through-doorbell-optional)).
 
 ## 1. Install
 
@@ -201,6 +202,11 @@ Rules from your own Claude Code settings still apply, and a deny always wins ove
 That's why the draft line denies sending explicitly, in case your settings allow it elsewhere.
 Don't run the agent with `--dangerously-skip-permissions` or a `bypassPermissions` default mode.
 
+**Or let Doorbell hold the send policy.** Give the agent only the triage line above
+(`Bash(doorbell *)`) and set up [Sending through Doorbell](#sending-through-doorbell-optional):
+the agent can then write drafts that you approve, and send directly only after you grant it
+with your password. This works the same for every harness.
+
 **Other agents.** Use their own controls: Codex sandbox and approval settings, Gemini CLI tool
 settings, or simply don't give the agent a Slack tool (triage).
 
@@ -281,6 +287,58 @@ watcher recognises those replies as the agent's, not yours.
 | `doorbell retry <seq>` | Re-queue a stuck item |
 | `doorbell deregister` | Stop listening. With no agents left, the daemon makes zero API calls. |
 | `doorbell doctor` | Token, scopes, and the app IDs seen posting as you |
+| `doorbell review` | Approve, edit or reject the agents' drafts (if you set up sending) |
+| `doorbell unlock` | After a reboot, let granted agents send again |
+
+## Sending through Doorbell (optional)
+
+New in 0.2.0. Lets agents answer through Doorbell instead of their own Slack tool, with the
+policy enforced by Doorbell and your password, the same on every harness. The watcher keeps
+its read-only token; sending uses a second token.
+
+1. **Create the sender app.** At <https://api.slack.com/apps>, **Create New App → From a
+   manifest**, paste [`slack-app-manifest-sender.yaml`](../slack-app-manifest-sender.yaml)
+   (scopes `chat:write`, `reactions:write`), install it, and save its User OAuth Token to a
+   file the same way as in step 2 (for example `~/.config/doorbell/sender-token`).
+2. **Add it, in your own terminal:** `doorbell sender add --token-file ~/.config/doorbell/sender-token`.
+   It asks for a new sending password (8 characters or more). The token is sealed with it in
+   Doorbell's database; delete the file afterwards.
+3. **Tell the agent how to reply.** In `AGENTS.md`, under "How you may reply", keep the
+   Doorbell draft or send line. The agent's commands are in its protocol section.
+
+**Drafts.** Any agent may run `doorbell draft <seq> --text ...`. The draft stays in Doorbell
+(not in Slack), the item is acked, and you get a notification. Review them with
+`doorbell review`: it shows each draft with the message it answers, asks for the password
+once, and lets you approve, edit and approve, reject or skip each one. Or use
+`doorbell drafts`, `doorbell approve <id> [--text ...]` and `doorbell reject <id>`.
+
+**Direct sending.** An agent can ask with `doorbell request-send --why "..."` (you get a
+notification). Allow it with `doorbell grant <agent>` (password). A granted agent's
+`doorbell send <seq> --text ...` posts as you, but only into the conversation of one of its
+own open items (a channel message is answered in its thread), at most `send_rate_per_hour`
+times an hour (default 20). `doorbell react <seq> <emoji>` adds a reaction the same way.
+Take it back with `doorbell revoke <agent>`.
+
+**After a restart Doorbell is locked.** The decrypted token lives only in the daemon's memory,
+so after a reboot or a daemon restart, direct sends fail (the agent drafts instead, and you
+get a notification) until you run `doorbell unlock`. `doorbell lock` stops all direct sends at
+once. `doorbell passwd` changes the password; `doorbell sender remove` deletes the sealed
+token and every grant.
+
+| Command | Who | Password |
+|---|---|---|
+| `doorbell draft <seq> --text ...` / `--text-file -` | agent | no |
+| `doorbell send <seq> ...`, `doorbell react <seq> <emoji>` | granted agent | no (needs `grant` and `unlock`) |
+| `doorbell request-send --why "..."` | agent | no |
+| `doorbell sender add --token-file F` | you | sets it |
+| `doorbell review`, `doorbell approve <id>` | you | yes |
+| `doorbell grant <agent>`, `doorbell unlock`, `doorbell passwd` | you | yes |
+| `doorbell reject <id>`, `doorbell revoke <agent>`, `doorbell lock`, `doorbell sender remove`, `doorbell drafts` | you | no |
+
+The password commands need a terminal and refuse to run inside an AI agent session. That's a
+convenience; the protection is that agents don't know the password. An agent that may run any
+command as you is not contained by this (see [SECURITY.md](../SECURITY.md)), so keep the
+agent at `Bash(doorbell *)`.
 
 ## Several agents
 
@@ -363,6 +421,8 @@ max_attempts: 3                 # deliveries before an item is marked stuck
 notify: true                    # desktop notifications (notify-send, osascript, Windows toast)
 notify_command: []              # or your own command, e.g. ["ntfy", "publish", "my-topic"]
 port: 0                         # local TCP port for the CLI; 0 picks a free one
+send_rate_per_hour: 20          # direct sends per agent per hour (approved drafts don't count)
+send_footer: ""                 # appended to messages Doorbell sends, e.g. " _(via my assistant)_"
 ```
 
 ## Troubleshooting
@@ -381,6 +441,10 @@ port: 0                         # local TCP port for the CLI; 0 picks a free one
 | Agent can't use Slack | Its Slack tool isn't allowed (step 6), or isn't signed in under the account the agent runs as (`CLAUDE_CONFIG_DIR` for Claude Code). |
 | Items keep coming back with `warning` | The agent isn't resolving them. Read its output (dispatcher log). |
 | Item `stuck` | `doorbell status` shows it; fix the cause, then `doorbell retry <seq>`. |
+| `send`: `may not send directly` | The agent isn't granted. It should draft; you can `doorbell grant <agent>`. |
+| `send`: `Doorbell is locked` | The daemon restarted. Run `doorbell unlock`. |
+| `sender add`: `missing scopes` | The sender token needs `chat:write`. Use `slack-app-manifest-sender.yaml`. |
+| `... is for the owner, in their own terminal` | You ran a password command inside an agent session or without a terminal. Run it in your own terminal. |
 | Dispatcher logs `backing off` | Runs are resolving nothing. Run the agent command by hand in the folder to see the error. |
 
 ## Uninstall
@@ -393,7 +457,8 @@ pipx uninstall agent-doorbell
 ```
 
 Then delete the state folder (see [Configuration](#configuration)) and your token file, and
-delete the app at <https://api.slack.com/apps> (this revokes the token).
+delete the app at <https://api.slack.com/apps> (this revokes the token). If you set up
+sending, delete the sender app too.
 
 ## Notes for AI agents doing the setup
 

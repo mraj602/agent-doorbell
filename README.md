@@ -33,9 +33,10 @@ your agent ◀── doorbell wait (blocks, costs nothing) ───────
   registered, the daemon makes no Slack calls at all.
 - **It's your agent, with your context.** Replies come from your own agent, with your repos,
   tools and instructions, not from a generic bot.
-- **Read-only and harness-neutral.** Doorbell itself never posts and never touches your
-  agent's settings. Whether the agent replies, drafts or only triages is set where it
-  belongs: in your agent's own permissions (for Claude Code, one command-line flag).
+- **Harness-neutral, and sending only with your approval.** Doorbell never touches your
+  agent's settings. The agent replies with its own Slack tool under its own permissions, or,
+  new in 0.2.0, through Doorbell: it writes drafts you approve with `doorbell review`, and
+  sends directly only after you grant it with your password.
 - **Nothing gets lost.** Items are leased and acked. A crashed or rate-limited agent gets them
   back. A laptop that was asleep catches up from where it stopped.
 - **No server, no webhook, no public URL.** It runs on your laptop or dev box, on Slack's free
@@ -69,6 +70,12 @@ doorbell service install --dispatch main --dir ~/doorbell-agents/main -- \
     "mcp__plugin_slack_slack__slack_send_message_draft" \
     --disallowedTools "mcp__plugin_slack_slack__slack_send_message" "mcp__plugin_slack_slack__slack_schedule_message"
 ```
+
+Optional, new in 0.2.0: let agents reply through Doorbell with only `Bash(doorbell *)` allowed.
+Create a second app from `slack-app-manifest-sender.yaml`, then in your terminal run
+`doorbell sender add --token-file <file>` (it asks for a password). Agents then write drafts
+that you approve with `doorbell review`; `doorbell grant <agent>` lets one send directly. See
+[Sending through Doorbell](docs/SETUP.md#sending-through-doorbell-optional).
 
 On Windows, save the token with the PowerShell lines in the setup guide. The full
 walkthrough, with a check after every step, is in **[docs/SETUP.md](docs/SETUP.md)**. It is
@@ -109,7 +116,7 @@ pros and cons, and the security model are in **[docs/ARCHITECTURE.md](docs/ARCHI
 
 ## Status and limits
 
-Version 0.1.0: early, read-only. Linux is the tested platform; macOS and Windows should work
+Version 0.2.0: early. Linux is the tested platform; macOS and Windows should work
 but are not covered by CI yet. One person per daemon. Replies arrive
 within about 30 seconds, not instantly. See
 [Limits and known gaps](docs/ARCHITECTURE.md#14-limits-and-known-gaps).

@@ -52,6 +52,12 @@ DEFAULTS = {
     # Run this instead of the desktop notification, with the message as the last argument,
     # e.g. ["ntfy", "publish", "my-topic"] or ["/path/to/script"].
     "notify_command": [],
+    # Sending (optional, see `doorbell sender add`). The most direct sends one agent may make in
+    # an hour; drafts you approve don't count.
+    "send_rate_per_hour": 20,
+    # Appended to every message Doorbell sends, e.g. " _(sent by my AI assistant)_". Empty by
+    # default: messages look exactly like ones you type.
+    "send_footer": "",
     # Local TCP port for agents (127.0.0.1 only). 0 picks a free port; agents find it in endpoint.json.
     "port": 0,
 }

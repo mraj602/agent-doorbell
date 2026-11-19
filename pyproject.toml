@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-dependencies = ["PyYAML>=6"]
+dependencies = ["PyYAML>=6", "cryptography>=42"]
 keywords = ["slack", "ai-agents", "claude-code", "codex", "gemini-cli", "automation", "notifications"]
 classifiers = [
     "Development Status :: 3 - Alpha",

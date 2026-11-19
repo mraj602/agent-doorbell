@@ -6,10 +6,41 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-19
+
+Optional sending through Doorbell, with the policy enforced by Doorbell and your password
+instead of by each agent's harness. Watching stays read-only and works as before.
+
+### Added
+
+- `doorbell sender add --token-file F`: a second Slack token with `chat:write` (app manifest
+  `slack-app-manifest-sender.yaml`), sealed with a password you choose (scrypt and
+  AES-256-GCM). The decrypted token is kept only in the daemon's memory.
+- Drafts: agents run `doorbell draft <seq> --text ...` (or `--text-file -`). The draft stays in
+  Doorbell, the item is acked as `drafted`, and you get a notification. `doorbell review`
+  goes through them (approve, edit, reject, skip) with one password prompt; also
+  `doorbell drafts`, `doorbell approve <id> [--text]` and `doorbell reject <id>`.
+- Direct sending: `doorbell request-send --why` notifies you; `doorbell grant <agent>`
+  (password) allows `doorbell send <seq>` and `doorbell react <seq> <emoji>`, only into the
+  conversation of one of the agent's own open items and at most `send_rate_per_hour` times
+  an hour (default 20). `doorbell revoke <agent>` takes it back.
+- `doorbell unlock` after a restart, `doorbell lock`, `doorbell passwd`, `doorbell sender remove`.
+- Config keys `send_rate_per_hour` and `send_footer`.
+- `doorbell status` shows sending state, grants, pending drafts and send requests; the status
+  skill explains them.
+- The generated `AGENTS.md` and the `handle` and `setup` skills cover the new reply options.
+
 ### Changed
 
 - `doorbell init-agent` warns when the folder is a project repo: an agent folder of its own
   is usually better, because an existing `AGENTS.md` or `CLAUDE.md` is kept.
+
+### Security
+
+- Commands that need the sending password require a terminal and refuse to run inside a
+  known AI agent session. Messages Doorbell sent are recorded, so they count as the agent's
+  reply, not as one you typed.
+- New dependency: `cryptography`.
 
 ## [0.1.0] - 2026-11-19
 
@@ -43,11 +74,6 @@ never posts. Everything below is new.
 - `doorbell doctor` to check the setup.
 - A Slack app manifest (`slack-app-manifest.yaml`) that requests read-only user token scopes.
 
-### Planned for the next release
-
-- Sending through Doorbell: agents write drafts that you approve from the terminal, or, for
-  agents you grant send access with your password, reply directly. The sending token is
-  sealed with that password and the daemon enforces the send policy.
-
-[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mraj602/agent-doorbell/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mraj602/agent-doorbell/releases/tag/v0.1.0

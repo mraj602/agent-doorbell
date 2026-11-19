@@ -7,7 +7,7 @@ import json
 import os
 import time
 
-from . import store
+from . import sending, store
 from .slackapi import Slack, read_token
 
 SUB_KEYS = {"dms", "group_dms", "channels", "everyone_in", "users", "usergroups",
@@ -322,6 +322,7 @@ async def op_status(d, req):
             "SELECT user_id, team_id, status, error, token_file FROM identities")],
         "agents": [agent_dict(d, a) for a in d.q("SELECT * FROM agents ORDER BY name")],
         "stuck": [dict(r) for r in d.q("SELECT seq, agent_id, channel, attempts FROM items WHERE state='stuck'")],
+        **sending.sending_status(d),
     }
     if req.get("verbose"):
         out["recent_audit"] = [dict(r) for r in d.q("SELECT * FROM audit ORDER BY ts DESC LIMIT 30")]
@@ -363,4 +364,5 @@ async def op_retry(d, req):
 
 OPS = {"identity_add": op_identity_add, "register": op_register, "deregister": op_deregister,
        "sub": op_sub, "inbox": op_inbox, "ack": op_ack, "unresolved": op_unresolved,
-       "status": op_status, "doctor": op_doctor, "log": op_log, "retry": op_retry}
+       "status": op_status, "doctor": op_doctor, "log": op_log, "retry": op_retry,
+       **sending.OPS}

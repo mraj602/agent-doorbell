@@ -37,7 +37,7 @@ A bug fix should come with a test that fails without it. A new feature should co
 
 ## Style
 
-- Keep dependencies to the Python standard library plus PyYAML. Do not add another dependency
+- Keep dependencies to the Python standard library plus PyYAML and cryptography. Do not add another dependency
   without discussing it in an issue first.
 - Keep the daemon free of LLM calls, and don't make it write agent harness settings (see [SECURITY.md](SECURITY.md)).
 - Keep changes small and focused; do unrelated cleanups in a separate pull request.

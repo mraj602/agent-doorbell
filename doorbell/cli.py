@@ -190,6 +190,49 @@ def build_parser():
     rt = sp.add_parser("retry", help="re-queue stuck items")
     rt.add_argument("seqs", nargs="+", type=int)
 
+    # ---- sending (optional): agents
+    def text_args(x):
+        g = x.add_mutually_exclusive_group(required=True)
+        g.add_argument("--text", help="the message (Slack markdown)")
+        g.add_argument("--text-file", help="read the message from a file, - for stdin")
+    dr = sp.add_parser("draft", help="agent: write a reply draft for an item; the owner approves it")
+    dr.add_argument("seq", type=int)
+    dr.add_argument("--name")
+    text_args(dr)
+    se = sp.add_parser("send", help="agent: reply to an item directly (needs `doorbell grant`)")
+    se.add_argument("seq", type=int)
+    se.add_argument("--name")
+    text_args(se)
+    rc = sp.add_parser("react", help="agent: add a reaction to an item's message (needs `doorbell grant`)")
+    rc.add_argument("seq", type=int)
+    rc.add_argument("emoji")
+    rc.add_argument("--name")
+    rq = sp.add_parser("request-send", help="agent: ask the owner to allow direct sending")
+    rq.add_argument("--why", required=True)
+    rq.add_argument("--name")
+
+    # ---- sending: the owner, in a terminal
+    sn = sp.add_parser("sender", help="owner: add or remove the token Doorbell sends with")
+    sn.add_argument("action", choices=["add", "remove"])
+    sn.add_argument("--token-file", help="file with an xoxp- user token that has chat:write (for add)")
+    sn.add_argument("--as", dest="identity", help="Slack user ID (for remove, with several identities)")
+    for cmd, hlp in (("unlock", "owner: allow granted agents to send again after a restart"),
+                     ("lock", "owner: stop all direct sends until `doorbell unlock`"),
+                     ("passwd", "owner: change the sending password")):
+        sp.add_parser(cmd, help=hlp).add_argument("--as", dest="identity", help="Slack user ID")
+    gr = sp.add_parser("grant", help="owner: let an agent send directly")
+    gr.add_argument("agent")
+    rv = sp.add_parser("revoke", help="owner: take direct sending away from an agent")
+    rv.add_argument("agent")
+    sp.add_parser("review", help="owner: go through drafts: approve, edit, reject")
+    dl = sp.add_parser("drafts", help="list drafts as JSON")
+    dl.add_argument("--all", action="store_true", help="include sent and rejected ones")
+    ap = sp.add_parser("approve", help="owner: send a draft")
+    ap.add_argument("id", type=int)
+    ap.add_argument("--text", help="send this text instead of the draft's")
+    rj = sp.add_parser("reject", help="owner: drop a draft")
+    rj.add_argument("id", type=int)
+
     h = sp.add_parser("hook", help="Claude Code hook entry points")
     h.add_argument("which", choices=["post-tool-use", "stop"])
     return p
@@ -254,6 +297,62 @@ def run(args):
         return out(call("log", since=args.since))
     if c == "retry":
         return out(call("retry", seqs=args.seqs))
+    if c in ("draft", "send"):
+        return out(call(c, name=agent_name(args), seq=args.seq, text=read_text(args)))
+    if c == "react":
+        return out(call("react", name=agent_name(args), seq=args.seq, emoji=args.emoji))
+    if c == "request-send":
+        return out(call("request_send", name=agent_name(args), why=args.why))
+    return run_owner(args)
+
+
+def read_text(args):
+    if args.text is not None:
+        return args.text
+    if args.text_file == "-":
+        return sys.stdin.read()
+    return Path(args.text_file).read_text()
+
+
+def run_owner(args):
+    from . import owner
+    c = args.cmd
+    if c == "sender" and args.action == "add":
+        if not args.token_file:
+            raise SystemExit("error: pass --token-file <file with the sender token>")
+        owner.require_owner("sender add")
+        status = call("status")
+        old = None
+        if status.get("sending"):
+            print("Replacing a sender token needs the current password.")
+            old = owner.ask_password("sender add", "Current sending password: ")
+        print("Choose a password for sending. Agents never get it; you type it to approve drafts, "
+              "grant agents and unlock after a restart.")
+        pw = owner.ask_password("sender add", "New sending password: ", confirm=True)
+        return out(call("sender_add", token_file=str(Path(args.token_file).expanduser().resolve()),
+                        password=pw, old_password=old))
+    if c == "sender":
+        return out(call("sender_remove", identity=args.identity))
+    if c == "unlock":
+        return out(call("unlock", identity=args.identity, password=owner.ask_password("unlock")))
+    if c == "lock":
+        return out(call("lock", identity=args.identity))
+    if c == "passwd":
+        old = owner.ask_password("passwd", "Current sending password: ")
+        new = owner.ask_password("passwd", "New sending password: ", confirm=True)
+        return out(call("passwd", identity=args.identity, old_password=old, password=new))
+    if c == "grant":
+        return out(call("grant", agent=args.agent, password=owner.ask_password("grant")))
+    if c == "revoke":
+        return out(call("revoke", agent=args.agent))
+    if c == "review":
+        return owner.review(call)
+    if c == "drafts":
+        return out(call("drafts", all=args.all))
+    if c == "approve":
+        return out(call("approve", id=args.id, text=args.text, password=owner.ask_password("approve")))
+    if c == "reject":
+        return out(call("reject", id=args.id))
 
 
 def agent_name_in(folder, args):

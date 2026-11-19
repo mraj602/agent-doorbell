@@ -34,6 +34,7 @@ class Daemon:
         self.calls = deque()       # timestamps of recent API calls (rate bucket)
         self.pause_until = 0
         self.slacks = {}
+        self.unlocked = {}   # identity -> (sender token, grant key); memory only, gone on restart
         self.last_convlist = {}
         self.last_usergroups = {}
         self.last_userlist = {}
@@ -427,7 +428,8 @@ class Daemon:
 
     def observed_ack(self, identity, ch, m):
         """A message from me after an open item resolves it: as 'replied' if an agent app sent it."""
-        by_agent = m.get("app_id") in self.cfg["agent_app_ids"]
+        by_agent = m.get("app_id") in self.cfg["agent_app_ids"] or bool(
+            self.q1("SELECT 1 FROM sent WHERE identity=? AND channel=? AND ts=?", identity, ch, m["ts"]))
         key = self.thread_key(m)
         rows = self.q("SELECT i.*, a.on_manual_reply, a.name FROM items i JOIN agents a ON a.id=i.agent_id "
                       "WHERE a.identity=? AND i.channel=? AND i.state IN ('pending','claimed') AND i.last_ts < ?",
