@@ -344,8 +344,9 @@ async def _op_sender_remove(d, req):
     ident = identity_of(d, req)
     await check_password(d, ident, req.get("password"))   # else removing then re-adding would reset it
     if d.q1("SELECT 1 FROM identities WHERE user_id=? AND mode='sealed'", ident):
-            raise ValueError("in single-token mode this token is also the watcher's. Switch watching to its own "
-                         "read-only token first (`doorbell login --for watch`), then remove the sender")
+            raise ValueError("in single-token mode this token is also the watcher's, so sending can't be removed "
+                         "on its own. Use `doorbell logout` to sign out completely; to watch read-only, sign in "
+                         "with a read-only app, or revoke all your tokens for this app and run `doorbell login`")
     d.db.execute("DELETE FROM sender WHERE identity=?", (ident,))
     d.db.execute("DELETE FROM grants WHERE identity=?", (ident,))
     d.unlocked.pop(ident, None)
