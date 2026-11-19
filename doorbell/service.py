@@ -115,11 +115,14 @@ def launchd_unload(label):
 
 
 def launchd_load(label, path):
+    import time
     launchd_unload(label)
-    for dom in launchd_domains():
-        if run(["launchctl", "bootstrap", dom, str(path)], quiet=True) == 0:
-            print(f"  loaded {label} in launchd domain {dom}")
-            return True
+    for attempt in range(20):   # bootout finishes asynchronously: retry while the old one stops
+        for dom in launchd_domains():
+            if run(["launchctl", "bootstrap", dom, str(path)], quiet=True) == 0:
+                print(f"  loaded {label} in launchd domain {dom}")
+                return True
+        time.sleep(0.5)
     print(f"error: launchd didn't load {path}. Run `doorbell daemon` in a terminal instead, or log in "
           f"at the Mac once and run `doorbell service install` again.", file=sys.stderr)
     return False
