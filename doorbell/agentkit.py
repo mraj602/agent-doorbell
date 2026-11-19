@@ -38,6 +38,10 @@ def init_agent(folder, name=None, owner=None, force=False):
     agents_md = (template("rules.md") + "\n" + template("protocol.md")).replace("{owner}", owner)
     made = []
     print(f"Agent folder {root} (agent {name!r})")
+    if (root / ".git").exists() and not (root / ".doorbell-agent").exists():
+        print("  note   this looks like a project repo. An agent folder of its own is usually better:\n"
+              "         an existing AGENTS.md or CLAUDE.md here is kept, so the agent would miss its\n"
+              "         doorbell instructions. Give the agent access to the repo when it runs instead.")
     write(root / ".doorbell-agent", name + "\n", force, made)
     write(root / "sub.yaml", template("sub.yaml"), force, made)
     write(root / "AGENTS.md", agents_md, force, made)

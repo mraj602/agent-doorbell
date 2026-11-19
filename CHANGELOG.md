@@ -6,6 +6,11 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `doorbell init-agent` warns when the folder is a project repo: an agent folder of its own
+  is usually better, because an existing `AGENTS.md` or `CLAUDE.md` is kept.
+
 ## [0.1.0] - 2026-11-19
 
 The first public version. Read-only: Agent Doorbell watches Slack and wakes agents, and

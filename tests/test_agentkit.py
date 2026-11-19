@@ -87,3 +87,13 @@ def test_windows_task_xml_is_well_formed(tmp_path):
         assert root.find(".//t:LogonTrigger", ns) is not None
         args = root.find(".//t:Arguments", ns).text
         assert ("daemon" in args) if name == "doorbelld" else ('"a & b"' in args)
+
+
+def test_init_agent_warns_inside_a_project_repo(tmp_path, capsys):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "AGENTS.md").write_text("the project's own instructions\n")
+    agentkit.init_agent(repo)
+    out = capsys.readouterr().out
+    assert "looks like a project repo" in out
+    assert (repo / "AGENTS.md").read_text() == "the project's own instructions\n"
