@@ -66,8 +66,25 @@ Agent Doorbell is a volunteer project and has no bug bounty.
   convenience guard, not a security boundary: the password is the boundary.
 - **The daemon never calls an LLM.** It watches Slack, queues events and wakes agents. Any
   model call happens in the agent you chose, not in Agent Doorbell.
-- **The Slack token lives in a file with mode 600** that the daemon reads. It is not passed on
-  command lines or written to logs.
+- **`doorbell login` signs in with OAuth and PKCE, and no client secret.** It prints a link,
+  and you click Allow in the browser. The token goes from Slack to the daemon's machine and is
+  never shown, printed or passed on a command line. The login generates a random PKCE
+  verifier and `state`, and refuses a callback whose `state` doesn't match. The redirect
+  listener binds 127.0.0.1 only, accepts one request on one path, then stops (it also stops
+  after a timeout). The app's Client ID is not a secret. Enabling PKCE makes the Slack app a
+  public client; only Slack support can undo that.
+- **A token that can post never sits in a plain file.** A watch-only login saves a credentials
+  file (`credentials/<user ID>.json`, mode 600, rewritten atomically when the token is
+  renewed) and refuses a token that has `chat:write`. A token with `chat:write` is sealed with
+  your password. In single-token mode (`doorbell login --for both`, one read+write app) the one
+  token is sealed, no file exists, and after a restart the identity is locked until
+  `doorbell unlock`. A leaked file can therefore only read, never post.
+- **Tokens that rotate are renewed by the daemon.** The refresh token is kept in the same
+  credentials file or sealed blob as the access token, and is never logged. If renewal fails,
+  the identity becomes `needs_login`, polling for it stops and you are notified.
+- **The Slack token lives in a file with mode 600** that the daemon reads (the credentials
+  file, or a token file you pass to `identity add`). It is not passed on command lines or
+  written to logs.
 - **The CLI talks to the daemon on 127.0.0.1 with a random access key.** The daemon writes
   the port and key to `endpoint.json` (mode 600) in its state folder. Without the key, a
   connection is refused, so other local users can't use the daemon.
@@ -88,11 +105,14 @@ Agent Doorbell is a volunteer project and has no bug bounty.
 ## Scope
 
 In scope: everything in this repository that ships, namely the `doorbell` package, the CLI,
-the daemon, the templates, the service files it installs, and the Slack app manifest.
+the daemon, the templates, the service files it installs, `doorbell login` (the OAuth flow
+and its redirect listener), and the Slack app manifests.
 
 Examples of reports we want: the token or message contents leaking to logs, files or other
 users; the endpoint or token file created with loose permissions; a way to use the daemon without
-the access key; the daemon making a write call to Slack; a way for a Slack message to make
+the access key; the login callback accepting a request with a wrong `state`, or listening on
+more than 127.0.0.1; a token with `chat:write` written to a plain file; the daemon making a
+write call to Slack; a way for a Slack message to make
 Agent Doorbell run code or change subscriptions without an audit entry; command injection in
 `dispatch` or `service install`.
 

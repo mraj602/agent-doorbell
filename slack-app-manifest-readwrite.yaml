@@ -1,0 +1,49 @@
+# Slack app manifest for Agent Doorbell: one app that reads and writes (layout B).
+#
+# One app instead of two, which helps on Slack's Free plan (it limits the number of apps).
+# `doorbell login --for both` gets one token with the read scopes plus chat:write and
+# reactions:write. Because that token can post, Doorbell never stores it in a plain file: it
+# seals it with your password. See docs/ORG-SETUP.md for the trade-offs.
+#
+# To use it (a workspace admin or anyone who may create apps does this once):
+#   1. Go to https://api.slack.com/apps and choose Create New App -> From a manifest.
+#   2. Pick your workspace, paste this file, and create the app.
+#   3. Under Basic Information, copy the Client ID and share it with the people who will use
+#      Agent Doorbell. The Client ID is not a secret. There is no client secret.
+#   4. Each person runs `doorbell login --for both` in their own terminal, opens the link,
+#      clicks Allow, and chooses a password. Nobody copies or pastes a token.
+#
+# After a restart Doorbell is locked until you run `doorbell unlock`. Nothing is missed: it
+# resumes from where it stopped.
+#
+# pkce_enabled makes this a public client (no client secret) so that any workspace member
+# can sign in. Slack treats this as one-way: once PKCE is on, only Slack support can turn it
+# off. The redirect URL is where `doorbell login` listens on your own machine.
+_metadata:
+  major_version: 1
+  minor_version: 1
+display_information:
+  name: Agent Doorbell
+  description: Wakes your AI agents when a Slack message needs them, and posts the replies you approve.
+oauth_config:
+  redirect_urls:
+    - http://localhost:8765/
+  pkce_enabled: true
+  scopes:
+    user:
+      - channels:history
+      - channels:read
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - mpim:history
+      - mpim:read
+      - users:read
+      - usergroups:read
+      - chat:write
+      - reactions:write
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

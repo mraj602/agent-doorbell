@@ -1,15 +1,23 @@
-# Slack app manifest for Agent Doorbell.
+# Slack app manifest for Agent Doorbell: the read-only watcher (layout A).
 #
-# To use it:
+# To use it (a workspace admin or anyone who may create apps does this once):
 #   1. Go to https://api.slack.com/apps and choose Create New App -> From a manifest.
 #   2. Pick your workspace, paste this file, and create the app.
-#   3. Choose Install to Workspace and approve it.
-#   4. Under OAuth & Permissions, copy the User OAuth Token (it starts with xoxp-).
-#      Save it in a file with mode 600 for the daemon to read (see the README).
+#   3. Under Basic Information, copy the Client ID and share it with the people who will
+#      use Agent Doorbell. The Client ID is not a secret. There is no client secret to share.
+#   4. Each person runs `doorbell login` (with the Client ID in the config key
+#      `slack_client_id`, the env var DOORBELL_SLACK_CLIENT_ID, or `--client-id`), opens the
+#      link, and clicks Allow. Nobody copies or pastes a token.
 #
 # This is an internal app for your own workspace. It has user token scopes only, all of them
-# read-only: no bot user, no bot scopes, no event subscriptions, no Socket Mode and no
-# redirect URL. Agent Doorbell polls Slack and never posts.
+# read-only: no bot user, no bot scopes, no event subscriptions and no Socket Mode. Agent
+# Doorbell polls Slack and never posts.
+#
+# pkce_enabled makes this a public client (no client secret) so that any workspace member
+# can sign in, not only app collaborators. Slack treats this as one-way: once PKCE is on,
+# only Slack support can turn it off. The redirect URL is where `doorbell login` listens on
+# your own machine (127.0.0.1 only). To use another port or path, change it here and pass
+# `--redirect-uri` to `doorbell login`.
 _metadata:
   major_version: 1
   minor_version: 1
@@ -17,6 +25,9 @@ display_information:
   name: Agent Doorbell
   description: Wakes your AI agents only when a Slack message needs them. Read-only.
 oauth_config:
+  redirect_urls:
+    - http://localhost:8765/
+  pkce_enabled: true
   scopes:
     user:
       - channels:history

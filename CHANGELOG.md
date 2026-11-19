@@ -6,11 +6,48 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - Unreleased
+
+Sign in to Slack with one command instead of copying a token.
+
 ### Added
 
+- `doorbell login`: Slack OAuth with PKCE and a `localhost` redirect. Any workspace member,
+  not only app collaborators, signs in with one command and a click on Allow. The token is
+  never shown or pasted, and no client secret is used. Options: `--client-id`, `--for
+  watch|send|both`, `--redirect-uri`, `--team`, `--no-browser`, `--timeout`, `--as`. The
+  Client ID can also come from config `slack_client_id` or `DOORBELL_SLACK_CLIENT_ID`.
+- Three app layouts: A, one read-only app; B, one read+write app; C, two apps. See
+  `docs/ORG-SETUP.md`.
+- Single-token mode (layout B, `doorbell login --for both`): one token watches and sends,
+  sealed with your password, with no file on disk. After a restart the identity is `locked`
+  until `doorbell unlock`, which resumes polling from the saved cursors, so nothing is missed.
+- Token renewal for rotating tokens, before they expire while the daemon runs. If renewal
+  fails the identity shows `needs_login`; `status` and `doctor` say to run `doorbell login`.
+- `status` shows each identity's `mode`, `status` (`ok`, `locked`, `needs_login`, `broken`)
+  and `token_expires_in_s`.
+- `slack-app-manifest-readwrite.yaml` for layout B.
+- `docs/ORG-SETUP.md`: for workspace admins, how to choose a layout, reuse an existing
+  internal app, enable PKCE (one-way), share the Client ID and revoke a member's token.
 - `docs/COMPARISON.md`: Agent Doorbell compared with about 20 ways to put an agent on Slack
   (OpenClaw, Claude in Slack, the Slack MCP, Cursor, Devin, Socket Mode and webhook bots,
   n8n, Zapier and others), use cases, and when not to use it. Also on the website.
+
+### Changed
+
+- `slack-app-manifest.yaml` and `slack-app-manifest-sender.yaml` have `pkce_enabled: true`
+  and the redirect URL `http://localhost:8765/`. Enabling PKCE makes the app a public client
+  and can't be undone except by Slack support.
+- `docs/SETUP.md` is built around `doorbell login`; the manual token file still works.
+- The setup skill runs `doorbell login --for watch` (the person clicks Allow); the status
+  skill explains `locked` and `needs_login`.
+
+### Security
+
+- A token that can post (`chat:write`) is never stored in a plain file: a watch-only login
+  refuses it, and `--for both` and `--for send` seal it with your password.
+- The login callback listens on 127.0.0.1 only, checks `state`, and serves one request.
+  Credentials files are mode 600 and rewritten atomically on renewal.
 
 ## [0.2.0] - 2026-11-19
 

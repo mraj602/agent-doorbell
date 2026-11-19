@@ -1,7 +1,7 @@
 ---
 name: setup
-description: Set up Agent Doorbell for Slack on this machine, step by step with a check after each step. Installs the doorbell command if missing (after asking), guides the person through creating their read-only Slack app and saving its token, starts the watcher, creates an agent folder, fills in its instructions, and shows how to run the agent. Use when the user asks to set up, install or configure Agent Doorbell or a Slack watcher for their agent, or runs /agent-doorbell:setup.
-allowed-tools: Bash(command -v doorbell), Bash(doorbell --version), Bash(doorbell status:*), Bash(doorbell doctor)
+description: Set up Agent Doorbell for Slack on this machine, step by step with a check after each step. Installs the doorbell command if missing (after asking), signs the person in to Slack with `doorbell login` (they click Allow; no token is pasted), starts the watcher, creates an agent folder, fills in its instructions, and shows how to run the agent. Use when the user asks to set up, install or configure Agent Doorbell or a Slack watcher for their agent, or runs /agent-doorbell:setup.
+allowed-tools: Bash(command -v doorbell), Bash(doorbell --version), Bash(doorbell status:*), Bash(doorbell doctor), Bash(doorbell login --for watch:*)
 ---
 
 Set up Agent Doorbell for this person. Go through the steps in order, run each step's check,
@@ -15,11 +15,11 @@ approves drafts and grants direct sending with a password.
 
 Rules that always hold:
 
-- **Never ask for the Slack token or the sending password in the chat**, and never put
-  either in a command line. Never run `doorbell sender add`, `grant`, `unlock`, `approve`,
-  `review` or `passwd` yourself: the person runs them in their own terminal.
-- **Never ask for the Slack token in the chat**, and never put it in a command line. The
-  person saves it to a file with the command in step 2, in their own terminal.
+- **Never ask for a Slack token or the sending password in the chat**, and never put either
+  in a command line. You may run `doorbell login --for watch`: the person clicks Allow in
+  the browser and the token is never shown to you. Never run `doorbell login --for send`,
+  `doorbell login --for both`, `sender add`, `grant`, `unlock`, `approve`, `review` or
+  `passwd` yourself: the person runs them in their own terminal.
 - **Never change the person's Claude Code permission settings** (`settings.json`, allow or
   deny rules). Step 6 is their decision: show the flags, let them choose.
 - Ask before installing anything, and before anything that starts a service.
@@ -41,35 +41,7 @@ Python 3.10 or newer is needed.
 folder (`~/.local/bin` for pipx, uv and pip `--user`) is not on `PATH`: tell the person the
 line to add to their shell profile and use the full path for the rest of this session.
 
-## 2. The Slack app and token (the person does this)
-
-Tell the person, in one message:
-
-1. Open <https://api.slack.com/apps>, choose **Create New App → From a manifest**, pick the
-   workspace, paste the manifest from
-   <https://github.com/mraj602/agent-doorbell/blob/main/slack-app-manifest.yaml>, create it.
-2. **Install App → Install to Workspace → Allow** (some workspaces need admin approval).
-3. Copy the **User OAuth Token** (`xoxp-...`) and save it with this command in their own
-   terminal (not here). Give the command for their OS:
-
-   Linux and macOS:
-   ```
-   mkdir -p ~/.config/doorbell
-   ( umask 077; read -rsp 'Slack user token: ' t; echo; printf '%s\n' "$t" > ~/.config/doorbell/slack-token )
-   ```
-   Windows (PowerShell):
-   ```
-   New-Item -ItemType Directory -Force "$HOME\.config\doorbell" | Out-Null
-   $s = Read-Host 'Slack user token' -AsSecureString
-   [Net.NetworkCredential]::new('', $s).Password | Set-Content -NoNewline "$HOME\.config\doorbell\slack-token"
-   ```
-
-Wait until they say it's done. If they already have a token file, use its path.
-
-**Check:** the file exists and its first line starts with `xoxp-` (check with
-`grep -c '^xoxp-' <file>`, which prints only a count, never the token).
-
-## 3. Start the watcher
+## 2. Start the watcher
 
 Ask for a yes, then run `doorbell service install`. It installs a per-user service that
 starts at login: systemd on Linux, launchd on macOS, Task Scheduler on Windows.
@@ -80,12 +52,58 @@ run it: under their own supervisor, or for now in the background with
 
 **Check:** `doorbell status` shows `"state": "DORMANT"` (no agents yet, zero Slack calls).
 
-## 4. Add the token
+## 3. The Slack app and its Client ID
 
-Run `doorbell identity add --token-file <the file from step 2>`.
+`doorbell login` needs the **Client ID** of a Slack app that has PKCE on. It is not a secret,
+and there is no client secret. Ask the person: does their workspace already have a Doorbell
+app? If yes, ask for the Client ID (they need not be an app collaborator). If not, they (or
+an admin) create one from a manifest at <https://api.slack.com/apps> (**Create New App →
+From a manifest**) and copy the Client ID from **Basic Information**. Details are in
+<https://github.com/mraj602/agent-doorbell/blob/main/docs/ORG-SETUP.md>.
 
-**Check:** the output shows their Slack user and `"warning": null`, and `doorbell doctor`
-shows `"token": "ok"` and `"missing_scopes": []`.
+Explain the three layouts in a few lines and recommend A unless they want Doorbell to send:
+
+- **A. One read-only app** (`slack-app-manifest.yaml`). Watching only. Agents reply with
+  their own Slack tool, or only triage.
+- **B. One read+write app** (`slack-app-manifest-readwrite.yaml`, "single-token mode"). One
+  token watches and sends. It is sealed with a password, so after a restart nothing is
+  polled until they run `doorbell unlock`. Nothing is missed.
+- **C. Two apps**, a read app (A) and a write app (`slack-app-manifest-sender.yaml`).
+  Watching resumes by itself after a restart; sending needs `doorbell unlock`.
+
+Manifests are in <https://github.com/mraj602/agent-doorbell/blob/main/>. Turning on PKCE is
+one-way (only Slack support can undo it), so warn them before they add it to an existing app
+that other tools use.
+
+**Check:** they have a Client ID.
+
+## 4. Sign in
+
+For watching (layouts A and C, and the read side of any layout), run:
+
+`doorbell login --for watch --client-id <Client ID>`
+
+(Omit `--client-id` if `slack_client_id` is in the config or `DOORBELL_SLACK_CLIENT_ID` is
+set.) It prints a link and opens the browser. Tell the person to click **Allow**. Wait for it
+to finish. On a remote or headless machine add `--no-browser` and tell them to open the link
+through an SSH tunnel: `ssh -L 8765:localhost:8765 user@box`. If they have no browser at all
+on this machine, they run the command in their own terminal.
+
+For layout B, and for the sending side of layout C, the person runs these in their own
+terminal (they ask for a password): `doorbell login --for both --client-id <ID>` for B,
+`doorbell login --for send --client-id <write app's ID>` for C. Wait until they say it's done.
+
+If they already have a token file from an older setup, `doorbell identity add --token-file
+<file>` still works.
+
+**Check:** the output shows their Slack user, `doorbell doctor` shows `"token": "ok"` and
+`"missing_scopes": []`. For layout B, `doorbell status` shows `"mode": "sealed"` and
+`"status": "ok"`.
+
+If it fails: `bad_redirect_uri` means the redirect URL isn't registered in the app (the
+manifests register `http://localhost:8765/`); a busy port means pick another with
+`--redirect-uri`; `access_denied` means Allow wasn't clicked or an admin must approve the
+app. The setup guide's Troubleshooting table has the rest.
 
 ## 5. Create the agent folder
 
@@ -131,18 +149,15 @@ they have no Slack tool, only triage works (the Slack plugin installs with
 ## 6b. Optional: sending through Doorbell
 
 Offer it if they have no Slack tool, or want one send policy for every agent. Then the agent
-needs only the triage flags (`Bash(doorbell *)`). Tell the person, in one message:
-
-1. Create a second app the same way as in step 2, from
-   <https://github.com/mraj602/agent-doorbell/blob/main/slack-app-manifest-sender.yaml>,
-   install it, and save its User OAuth Token with the same command as in step 2 but to
-   `~/.config/doorbell/sender-token`.
-2. In their own terminal, run `doorbell sender add --token-file ~/.config/doorbell/sender-token`
-   and choose a sending password. Then delete the token file.
+needs only the triage flags (`Bash(doorbell *)`). If they chose layout B in step 4, sending
+is already set up. For layout C, tell the person to run, in their own terminal,
+`doorbell login --for send --client-id <write app's Client ID>` and choose a sending
+password. Never run it yourself.
 
 In `AGENTS.md`, under "How you may reply", keep the Doorbell draft line (or the send line, if
 they will grant the agent). Explain: drafts are approved with `doorbell review`;
-`doorbell grant <name>` lets the agent send directly; after a reboot, `doorbell unlock`.
+`doorbell grant <name>` lets the agent send directly; after a reboot, `doorbell unlock`
+(in layout B it also resumes watching).
 
 **Check:** `doorbell status` shows `"sending"` with their user and `"unlocked": true`.
 
