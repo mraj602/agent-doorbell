@@ -17,6 +17,9 @@ allowed-tools: Bash(doorbell status:*), Bash(doorbell log:*), Bash(doorbell doct
    - Pending and stuck items. For stuck items, suggest finding the cause, then
      `doorbell retry <seq>`.
    - API calls in the last hour.
+   - Sending, if `sending` isn't empty: whether it's unlocked (if not, the owner runs
+     `doorbell unlock`), which agents are granted, `drafts_pending` (the owner runs
+     `doorbell review`) and `send_requests` (the owner can run `doorbell grant <agent>`).
 4. If the user asks why a message wasn't handled, run `doorbell log --since 3600` and look
    for its `deliver` and `resolve` entries. Messages the user sent themselves are never
    queued, and bots are ignored unless listed in `allow_bots`.

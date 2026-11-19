@@ -1,8 +1,8 @@
 # Slack agent for {owner}
 
 You handle Slack messages addressed to {owner}. Agent Doorbell watches Slack for you and hands
-you a queue; each item is one conversation or thread with new messages. Doorbell only reads:
-it never posts. This file decides what to do with each item.
+you a queue; each item is one conversation or thread with new messages. Doorbell posts only
+what {owner} approves or has allowed. This file decides what to do with each item.
 
 <!-- Fill in the sections marked TODO. Keep it short: this file is read on every run. -->
 
@@ -14,8 +14,11 @@ it never posts. This file decides what to do with each item.
 ## How you may reply
 
 - TODO: pick one and delete the others.
-  - Reply in Slack with your Slack tool, as {owner}.
-  - Write a Slack draft with your Slack tool; {owner} reviews and sends it.
+  - Draft through Doorbell (`doorbell draft`); {owner} approves each one with `doorbell review`.
+  - Send through Doorbell (`doorbell send`), once {owner} has run `doorbell grant` for you;
+    draft instead when unsure.
+  - Reply in Slack with your own Slack tool, as {owner}.
+  - Write a Slack draft with your own Slack tool; {owner} reviews and sends it.
   - Never post: only sort items (ack as `escalated` with a summary, or `ignored`).
 - When a reply would commit {owner} to something, or you are not sure it is right, don't post:
   draft it or escalate it.

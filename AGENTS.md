@@ -1,6 +1,6 @@
 # Notes for AI coding agents working on this repo
 
-- Python 3.10+, standard library plus PyYAML only. Don't add dependencies.
+- Python 3.10+, standard library plus PyYAML and cryptography (for the sealed sender token) only. Don't add dependencies.
 - Package `doorbell/`: `daemon.py` (polling, routing, lifecycle), `server.py` (ops over local TCP),
   `cli.py` (client + Claude Code hooks), `agentkit.py` + `templates/` (init-agent), `runner.py`
   (dispatch), `service.py` (systemd/launchd/Task Scheduler). The Claude Code plugin is in

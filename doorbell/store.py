@@ -37,6 +37,19 @@ CREATE TABLE IF NOT EXISTS usergroups_cache(
   group_id TEXT PRIMARY KEY, handle TEXT, members TEXT, fetched_at REAL);
 CREATE TABLE IF NOT EXISTS api_calls(ts REAL, method TEXT, ok INTEGER);
 CREATE TABLE IF NOT EXISTS audit(ts REAL, kind TEXT, agent TEXT, detail TEXT);
+CREATE TABLE IF NOT EXISTS sender(
+  identity TEXT PRIMARY KEY, sealed TEXT, scopes TEXT, added_at REAL);
+CREATE TABLE IF NOT EXISTS grants(
+  identity TEXT, agent TEXT, mac TEXT, granted_at REAL, PRIMARY KEY(identity, agent));
+CREATE TABLE IF NOT EXISTS send_requests(
+  agent TEXT PRIMARY KEY, why TEXT, requested_at REAL);
+CREATE TABLE IF NOT EXISTS drafts(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, agent TEXT, identity TEXT, item_seq INTEGER,
+  channel TEXT, thread_ts TEXT, text TEXT, state TEXT, created_at REAL, decided_at REAL,
+  sent_ts TEXT, error TEXT);
+CREATE TABLE IF NOT EXISTS sent(
+  identity TEXT, channel TEXT, ts TEXT, agent TEXT, item_seq INTEGER, via TEXT, sent_at REAL,
+  PRIMARY KEY(identity, channel, ts));
 """
 
 

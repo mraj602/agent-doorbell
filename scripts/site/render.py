@@ -3,7 +3,7 @@
 
     python3 scripts/site/render.py [path/to/status-polling.json path/to/status-dormant.json]
 
-Needs google-chrome and Pillow. The status screenshot is built from real `doorbell status`
+Needs google-chrome and Pillow. The status block on the page is built from real `doorbell status`
 output (see capture_status.py); without arguments it re-uses the JSON from $DOORBELL_SITE_TMP.
 """
 import html
@@ -77,19 +77,15 @@ def main():
     p, dm = json.loads(pol.read_text()), json.loads(dor.read_text())
     dm["api_calls"] = {"last_1m": 0, "last_1h": 0}      # a settled daemon: the 3 start-up calls aged out
     dm["uptime_s"] = 4310
-    body = status_html(dm, "doorbell status   # no agent is listening") + "\n" + status_html(p, "doorbell status   # two agents registered")
-    page = ('<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="mock.css"></head><body>'
-            '<div class="win" style="--w:1120px"><div class="chrome"><i></i><i></i><i></i><span>~/doorbell-agents/main</span></div>'
-            f"<pre>{body}</pre></div></body></html>")
+    # The status output goes on the page as text (legible, searchable, themeable): write the
+    # two <pre> bodies to .build/status-*.html and paste them into site/index.html (#how).
     work = HERE / ".build"
     work.mkdir(exist_ok=True)
-    (work / "terminal-status.html").write_text(page)
-    # the .build copy needs mock.css next to it
-    (work / "mock.css").write_text((HERE / "mock.css").read_text().replace("../../site/", "../../../site/"))
-    jobs = [(work / "terminal-status.html", "doorbell-status.png", 1120, 1700),
-            (HERE / "terminal-setup.html", "claude-code-setup.png", 980, 800),
-            (HERE / "slack-thread.html", "slack-thread.png", 900, 500),
-            (HERE / "flow.html", "flow.png", 1100, 420)]
+    (work / "status-dormant.html").write_text(status_html(dm, "doorbell status   # no agent is listening"))
+    (work / "status-polling.html").write_text(status_html(p, "doorbell status   # two agents registered"))
+    print("status snippets in", work)
+    jobs = [(HERE / "terminal-setup.html", "claude-code-setup.png", 720, 900),
+            (HERE / "slack-thread.html", "slack-thread.png", 600, 600)]
     for src, name, w, h in jobs:
         out = IMG / name
         chrome(src, out, w, h, transparent=True)
