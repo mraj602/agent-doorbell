@@ -1,6 +1,8 @@
 # Agent Doorbell for Slack
 
 [![ci](https://github.com/mraj602/agent-doorbell/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mraj602/agent-doorbell/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/agent-doorbell.svg)](https://pypi.org/project/agent-doorbell/)
+[![Python](https://img.shields.io/pypi/pyversions/agent-doorbell.svg)](https://pypi.org/project/agent-doorbell/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Let your AI agents sleep. Agent Doorbell watches Slack and wakes them only when someone

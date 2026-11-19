@@ -30,7 +30,7 @@ itself and starts listening.
 | [7. Run the agent](#7-run-the-agent) | You start it; it registers itself |
 | [8. Test it end to end](#8-test-it-end-to-end) | You, plus someone to message you |
 
-Also: [Everyday use](#everyday-use) · [Configuration](#configuration) ·
+Also: [Everyday use](#everyday-use) · [Several agents](#several-agents) · [Configuration](#configuration) ·
 [Troubleshooting](#troubleshooting) · [Uninstall](#uninstall)
 
 ## Before you start
@@ -277,6 +277,66 @@ watcher recognises those replies as the agent's, not yours.
 | `doorbell retry <seq>` | Re-queue a stuck item |
 | `doorbell deregister` | Stop listening. With no agents left, the daemon makes zero API calls. |
 | `doorbell doctor` | Token, scopes, and the app IDs seen posting as you |
+
+## Several agents
+
+One daemon serves any number of agents. Each agent is its own folder, with its own
+`AGENTS.md` (what it does), its own `sub.yaml` (what it listens to), its own permission level
+and its own runner. Create more with `init-agent`:
+
+```bash
+doorbell init-agent ~/doorbell-agents/oncall --owner "Your Name"
+doorbell init-agent ~/doorbell-agents/reviews --owner "Your Name"
+```
+
+For example:
+
+| Agent | `sub.yaml` | `AGENTS.md` | Level and runner |
+|---|---|---|---|
+| `main` | defaults: your DMs, group DMs, @mentions, your threads | answer questions about what you own | draft, headless dispatch |
+| `oncall` | `dms: none`, `mentions_of_me: false`, `threads_im_in: false`, `everyone_in: ["#incidents"]`, `allow_bots: ["B0ALERTBOT"]` | summarise alerts, escalate anything new | triage, headless dispatch |
+| `reviews` | `dms: none`, `mentions_of_me: false`, `threads_im_in: false`, `users: ["@alex", "@sam"]`, `channels: ["#code-review"]` | answer review questions from those two people | reply, live session |
+
+How they share the watcher:
+
+- Each agent registers itself with its own folder's `sub.yaml`, and gets its own queue.
+- The daemon polls the union of what live agents subscribe to, and each conversation only
+  once, however many agents want it. With no agent listening, it polls nothing.
+- A message that matches several agents is queued for each of them. Each agent claims and
+  acks only its own items, so one agent's reply doesn't resolve another's. A reply you type
+  yourself resolves the matching items of every agent.
+- Agents come and go independently: one going inactive doesn't affect the others.
+
+### `sub.yaml` keys
+
+| Key | Values | Meaning |
+|---|---|---|
+| `dms` | `all`, `followed`, `none` | Your DMs: all of them, only from people in `users`, or none. |
+| `group_dms` | `true`, `false` | Group DMs you are in. |
+| `mentions_of_me` | `true`, `false` | `@you` in any conversation that is polled. |
+| `threads_im_in` | `true`, `false` | New replies in threads you posted in (tracked for 7 days). |
+| `users` | `["@alex", "U012ABCDEF"]` | Followed people. Their DMs (with `dms: followed`) and their messages in `channels` count. |
+| `usergroups` | `["@platform-team"]` | Everyone in the group counts as followed. |
+| `channels` | `["#proj-x"]` | Channels to poll for followed people and mentions. Private channels: you must be a member. |
+| `everyone_in` | `["#incidents"]` | Channels where any human's message counts. |
+| `allow_bots` | `["B012ABCDEF"]` | Bots whose messages count (bots are ignored otherwise). |
+
+Change a running agent with `doorbell sub add|remove|set <key> <values> --why "..."` (audited,
+with a notification). `doorbell register` resets the subscription to `sub.yaml`, so put
+lasting changes in the file.
+
+### Registration options
+
+Options that apply to the agent rather than to what it hears are flags on
+`doorbell register`, run in the agent's folder:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--resume checkpoint\|now` | `checkpoint` | After being inactive: catch up from the last handled message, or start from now. |
+| `--max-catchup SECONDS` | 86400 (1 day) | The furthest back a returning agent catches up. |
+| `--idle-ttl SECONDS` | 21600 (6 h) | Time without contact before the agent goes inactive (stops being polled for). |
+| `--on-manual-reply defer\|ignore` | `defer` | When you reply yourself: resolve the agent's item (`defer`), or leave it for the agent. |
+| `--as USER_ID` | the only identity | Which Slack identity to read as, when several tokens are added. |
 
 ## Configuration
 
