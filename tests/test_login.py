@@ -292,6 +292,32 @@ def test_listener_rejects_a_state_mismatch():
     assert "code" not in res and "timed out" in str(res["error"]).lower()
 
 
+def test_a_silent_connection_does_not_block_the_listener():
+    port = free_port()
+    redirect = f"http://localhost:{port}/cb"
+    idle = []
+
+    def then():
+        idle.append(socket.create_connection(("127.0.0.1", port)))   # connects, never sends
+        return get(f"http://127.0.0.1:{port}/cb?code=abc&state=S")
+    res, (status, _) = listen(redirect, "S", 10, then)
+    idle[0].close()
+    assert status == 200 and res["code"] == "abc"
+
+
+def test_listener_answers_on_ipv6_loopback_for_localhost():
+    if not socket.has_ipv6:
+        pytest.skip("no IPv6")
+    try:
+        socket.create_server(("::1", 0), family=socket.AF_INET6).close()
+    except OSError:
+        pytest.skip("no IPv6 loopback")
+    port = free_port()
+    res, (status, _) = listen(f"http://localhost:{port}/cb", "S", 10,
+                              lambda: get(f"http://[::1]:{port}/cb?code=abc&state=S"))
+    assert status == 200 and res["code"] == "abc"
+
+
 def test_listener_reports_access_denied():
     port = free_port()
     redirect = f"http://localhost:{port}/cb"
