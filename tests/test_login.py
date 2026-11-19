@@ -34,9 +34,18 @@ PROMPT = "Open this link to sign in: "
 
 # ---------- helpers ----------
 def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    """A free port below the OS's ephemeral range, like the real default 8765: an ephemeral port
+    can be the local end of another live connection, which made connects time out on macOS."""
+    import random
+    for _ in range(200):
+        port = random.randint(20000, 32000)
+        with socket.socket() as s:
+            try:
+                s.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
+    raise RuntimeError("no free port")
 
 
 def err(fn, *a, **kw):
