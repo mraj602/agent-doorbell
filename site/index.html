@@ -43,6 +43,7 @@
         <a href="#setup">Setup</a>
         <a href="#plugin">Claude Code</a>
         <a href="#levels">Levels</a>
+        <a href="#sending">Sending</a>
         <a href="#privacy">Security</a>
         <a href="#faq">FAQ</a>
         <a href="https://github.com/mraj602/agent-doorbell">GitHub</a>
@@ -54,7 +55,7 @@
     <section class="hero" id="top">
       <div class="wrap grid">
         <div>
-          <p class="eyebrow">Unofficial, local, MIT, v0.1.0</p>
+          <p class="eyebrow">Unofficial, local, MIT, v0.2.0</p>
           <h1>Let your AI agents sleep.</h1>
           <p class="lead">Agent Doorbell watches Slack with a tiny local daemon and wakes your agent only when someone needs it. No LLM and no tokens while it is quiet.</p>
           <div class="code">
@@ -230,7 +231,32 @@ doorbell identity add --token-file ~/.config/doorbell/slack-token</code></pre>
             <tr><th scope="row">Reply</th><td>Also post and react as you.</td><td>A harmful post as you, within what the agent can read.</td></tr>
           </tbody>
         </table></div>
-        <p class="small mt">Doorbell itself never posts in 0.1.0. Sending through Doorbell with owner approval is coming in 0.2.0.</p>
+      </div>
+    </section>
+
+    <section id="sending" aria-labelledby="sending-h">
+      <div class="wrap">
+        <h2 id="sending-h">Or let Doorbell hold the send policy</h2>
+        <p class="sub">New in 0.2.0, optional. Give the agent nothing but <code>doorbell</code> commands. It writes drafts that you approve in your terminal, and sends directly only after you grant it with your password. The same on every harness.</p>
+        <div class="code">
+          <pre><code id="cmd-send"># once, in your own terminal: a second Slack app (slack-app-manifest-sender.yaml)
+doorbell sender add --token-file ~/.config/doorbell/sender-token   # sets your sending password
+
+# the agent
+doorbell draft 12 --text "Staging picked up PR 214; build is green."
+
+# you
+doorbell review            # approve, edit or reject each draft (password once)
+doorbell grant main        # optional: let agent "main" send directly
+doorbell unlock            # after a reboot</code></pre>
+          <button type="button" class="copy" data-copy="cmd-send" aria-label="Copy sending commands">Copy</button>
+        </div>
+        <ul class="plain">
+          <li><strong>Separate, sealed token.</strong> Sending uses its own <code>chat:write</code> token, encrypted with your password (scrypt, AES-256-GCM) and decrypted only into the daemon's memory. After a restart Doorbell is locked until you run <code>doorbell unlock</code>.</li>
+          <li><strong>Bounded.</strong> A granted agent can only answer in the conversation of one of its own open items, within an hourly limit, and can't <code>@channel</code>. A grant covers the agent's subscription as it was when you granted it.</li>
+          <li><strong>Password, not prompts.</strong> Approving, granting, unlocking and changing the token need the password, which agents never get. Revoking, rejecting and locking don't.</li>
+        </ul>
+        <p class="small">An agent that may run any command as you is not contained by this; keep it to <code>doorbell</code> commands. <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md#sending-through-doorbell-optional">Sending setup</a></p>
       </div>
     </section>
 
@@ -238,10 +264,10 @@ doorbell identity add --token-file ~/.config/doorbell/slack-token</code></pre>
       <div class="wrap">
         <h2 id="privacy-h">Security and privacy</h2>
         <ul class="plain">
-          <li><strong>Read-only.</strong> The daemon never posts and never calls an LLM. The Slack app you create has read scopes only, and <code>identity add</code> rejects tokens missing scopes and warns about extra ones.</li>
+          <li><strong>Read-only watching.</strong> The daemon never calls an LLM, and watches with a Slack app that has read scopes only; <code>identity add</code> rejects tokens missing scopes and warns about extra ones. Optional sending uses a second token, sealed with your password.</li>
           <li><strong>Local only.</strong> The daemon listens on 127.0.0.1 and every request carries a random access key from a mode-600 file, so other users on the machine cannot use it. There is no cloud service and no public URL.</li>
           <li><strong>The token stays in a file only you can read.</strong> <code>identity add</code> refuses group- or world-readable files on Linux and macOS. The setup skill never asks for it in chat.</li>
-          <li><strong>It never writes your harness settings.</strong> Doorbell does not touch your agent's permission rules or grant Slack write access. Those stay yours.</li>
+          <li><strong>It never writes your harness settings.</strong> Doorbell does not touch your agent's permission rules. Slack write access through Doorbell exists only if you set up sending and approve or grant with your password.</li>
           <li><strong>Short memory.</strong> Messages are kept for 7 days, then deleted. Subscription changes an agent makes are audited and pop a notification, and an agent can only claim and ack its own items.</li>
           <li><strong>Prompt injection is the main risk.</strong> The instructions tell the agent to treat message text as data and to escalate anything that commits you. That helps but is not a guarantee, which is why the hard limit is the agent's tool permissions.</li>
         </ul>
@@ -255,7 +281,7 @@ doorbell identity add --token-file ~/.config/doorbell/slack-token</code></pre>
         <details><summary>Does it cost tokens when nothing is happening?</summary><p>No. The watcher is a plain Python daemon with no LLM. With no agents listening it makes no Slack API calls at all. A live <code>doorbell wait</code> session blocks on a background command, and headless dispatch has no agent process until there is work.</p></details>
         <details><summary>Why polling and not Slack events or webhooks?</summary><p>Polling needs no public URL or always-on socket, and it can catch up after downtime, which events cannot. The cost is latency: replies arrive within about 30 seconds, not instantly. The architecture doc has the full comparison.</p></details>
         <details><summary>Does it need a paid Slack plan or admin rights?</summary><p>Free plans work. Some workspaces require an admin to approve new apps; if yours does, the install step asks for approval.</p></details>
-        <details><summary>Can it send messages for me?</summary><p>Not in 0.1.0. Doorbell only reads. Replies and drafts come from your agent's own Slack tool, within the permissions you gave it. Sending through Doorbell with owner approval is planned for 0.2.0.</p></details>
+        <details><summary>Can it send messages for me?</summary><p>Two ways. Your agent can reply with its own Slack tool, within the permissions you gave it. Or, since 0.2.0, through Doorbell: the agent writes drafts you approve with <code>doorbell review</code>, and agents you grant with your password can send directly into the conversations that reached them.</p></details>
         <details><summary>Live session or headless dispatch?</summary><p>Headless is recommended for anything that runs for days: each batch starts a fresh, small context. A live session is good for watching the agent work, but its cost per batch grows with the session's age. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/RUNNING.md">RUNNING.md</a>.</p></details>
         <details><summary>How many people can share one daemon?</summary><p>One person per daemon, with their own Slack app and token. Several agents can share it.</p></details>
         <details><summary>What are the known limits?</summary><p>Linux is the tested platform; macOS and Windows should work but are not covered by CI yet. Only messages are watched, not search, files or canvases. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ARCHITECTURE.md#14-limits-and-known-gaps">Limits and known gaps</a>.</p></details>
