@@ -1,19 +1,26 @@
-# Slack app manifest for Agent Doorbell: one app that reads and writes (layout B).
+# Slack app manifest for Agent Doorbell: one app that allows read and write scopes.
 #
 # One app instead of two, which helps on Slack's Free plan (it limits the number of apps).
-# `doorbell login --for both` gets one token with the read scopes plus chat:write and
-# reactions:write. Because that token can post, Doorbell never stores it in a plain file: it
-# seals it with your password. See docs/ORG-SETUP.md for the trade-offs.
+# `doorbell login` asks for the read scopes only. Members who turn on sending run
+# `doorbell login --send`, which asks for chat:write and reactions:write too. Because a token
+# that can post is never stored in a plain file, Doorbell seals it with the member's
+# password and uses that one token to watch and send (layout B). Members who never approve
+# chat:write keep a read-only token in a file (layout A). Slack adds up what one person has
+# approved for one app, so a member who approved chat:write once gets a token that can post
+# from every later sign-in, until all of their tokens for this app are revoked.
+# See docs/ORG-SETUP.md.
 #
 # To use it (a workspace admin or anyone who may create apps does this once):
 #   1. Go to https://api.slack.com/apps and choose Create New App -> From a manifest.
 #   2. Pick your workspace, paste this file, and create the app.
 #   3. Under Basic Information, copy the Client ID and share it with the people who will use
 #      Agent Doorbell. The Client ID is not a secret. There is no client secret.
-#   4. Each person runs `doorbell login --for both` in their own terminal, opens the link,
-#      clicks Allow, and chooses a password. Nobody copies or pastes a token.
+#   4. Each person runs `doorbell login` in their own terminal, opens the link and clicks
+#      Allow. Nobody copies or pastes a token. For sending: `doorbell login --send`.
+#   No reinstall is needed. Don't click "Reinstall to Workspace" unless you must: it grants
+#   the person who clicks it every user scope below, including chat:write.
 #
-# After a restart Doorbell is locked until you run `doorbell unlock`. Nothing is missed: it
+# After a restart, layout B is locked until you run `doorbell unlock`. Nothing is missed: it
 # resumes from where it stopped.
 #
 # pkce_enabled makes this a public client (no client secret) so that any workspace member

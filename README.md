@@ -54,7 +54,7 @@ pipx install agent-doorbell              # or: uv tool install agent-doorbell
 doorbell service install
 
 # 2. Sign in to Slack: open the link, click Allow. No token is shown or pasted.
-#    Needs the Client ID of a Doorbell Slack app (see "Three ways to set up the Slack app")
+#    Needs the Client ID of a Doorbell Slack app (see "The Slack app and the three layouts")
 doorbell login --client-id <Client ID>
 
 # 3. Create an agent folder, then edit its AGENTS.md (instructions) and sub.yaml (who to listen to)
@@ -71,27 +71,45 @@ doorbell service install --dispatch main --dir ~/doorbell-agents/main -- \
 ```
 
 Optional: let agents reply through Doorbell with only `Bash(doorbell *)` allowed. In your own
-terminal run `doorbell login --for send --client-id <write app's Client ID>` (or
-`doorbell login --for both` with one read+write app). It asks for a password. Agents then
-write drafts that you approve with `doorbell review`; `doorbell grant <agent>` lets one send
-directly. See [Sending through Doorbell](docs/SETUP.md#sending-through-doorbell-optional).
+terminal run `doorbell login --send` (add `--client-id <write app's Client ID>` to use a second
+app). It asks for a password. Agents then write drafts that you approve with
+`doorbell review`; `doorbell grant <agent>` lets one send directly. See
+[Sending through Doorbell](docs/SETUP.md#sending-through-doorbell-optional). To sign out, run
+`doorbell logout`.
+
+On a server or over SSH, `doorbell login` prints the link. Open it on your laptop, click
+Allow, then paste the `http://localhost:8765/...` address the browser ends on into the waiting
+command. See [SETUP](docs/SETUP.md#on-a-server-over-ssh-or-headless).
 
 The full walkthrough, with a check after every step, is in **[docs/SETUP.md](docs/SETUP.md)**.
 It is written so an AI agent can follow it for you too. To use a hand-made token instead of
 `doorbell login`, see [Manual token](docs/SETUP.md#manual-token-alternative).
 
-## Three ways to set up the Slack app
+## The Slack app and the three layouts
 
 `doorbell login` works with an app that has PKCE on. Any workspace member can sign in, not
-only app collaborators. Create the app from a manifest, share its Client ID (not a secret),
-and everyone runs one command. A workspace admin does this once:
+only app collaborators. A workspace admin sets up the app once (a manifest, or any existing
+internal app) and shares its Client ID, which is not a secret:
 **[docs/ORG-SETUP.md](docs/ORG-SETUP.md)**.
+
+With no flags, `doorbell login` asks Slack for the read scopes only, then decides from what the
+returned token can really do:
+
+- It can't post: saved in a credentials file (mode 600), and watching is unattended. **Layout A.**
+- It can post: Doorbell says why, and (only for the owner in a terminal) seals it with a
+  password. One token watches and sends. **Layout B.** Anywhere else it refuses, revokes the
+  token and saves nothing.
+
+Slack adds up the scopes one person has approved for one app, across all of that person's
+tokens for it. That is why a read-only sign-in can return a token that can post. Approvals are
+per person, so on one app that allows write scopes, one member can be in layout A and another
+in layout B.
 
 | Layout | Apps | Agents can send through Doorbell | After a reboot |
 |---|---|---|---|
-| **A. One read-only app** (`slack-app-manifest.yaml`) | 1 | No | Watching resumes by itself |
-| **B. One read+write app** (`slack-app-manifest-readwrite.yaml`) | 1 | Yes | Locked until `doorbell unlock`; nothing is missed |
-| **C. Two apps**, read and write (`slack-app-manifest-sender.yaml` for the write app) | 2 | Yes | Watching resumes by itself; sending needs `doorbell unlock` |
+| **A. Watch only**: read-only token in a file | 1 | No | Watching resumes by itself |
+| **B. One sealed token** that watches and sends (`doorbell login --send`, same app) | 1 | Yes | Locked until `doorbell unlock`; nothing is missed |
+| **C. Two apps**: read-only file token, plus a sealed token from a write app (`doorbell login --send --client-id <write app>`) | 2 different | Yes | Watching resumes by itself; sending needs `doorbell unlock` |
 
 A token that can post is never stored in a plain file: it is sealed with your password.
 
@@ -105,7 +123,7 @@ You choose, in your agent's own permissions (see [SETUP step 6](docs/SETUP.md#6-
 | Draft | write drafts in the right DM or thread; you review and send | starting out with replies |
 | Reply | post as you, react, draft | routine questions you trust it with |
 
-Or let Doorbell hold the send policy (0.2.0): give the agent only `Bash(doorbell *)`; it writes drafts you approve with `doorbell review`, and sends directly only after `doorbell grant`. See [Sending through Doorbell](docs/SETUP.md#sending-through-doorbell-optional).
+Or let Doorbell hold the send policy: give the agent only `Bash(doorbell *)`; it writes drafts you approve with `doorbell review`, and sends directly only after `doorbell grant`. See [Sending through Doorbell](docs/SETUP.md#sending-through-doorbell-optional).
 
 ## How it compares
 
@@ -133,7 +151,7 @@ The full comparison of about 20 tools, use cases and sources is in
 ## Documentation
 
 - [Setup guide](docs/SETUP.md): install, `doorbell login`, first agent, test, troubleshooting
-- [Slack app setup for a workspace](docs/ORG-SETUP.md): for admins; layouts, PKCE, sharing the Client ID
+- [Slack app setup for a workspace](docs/ORG-SETUP.md): for admins; the app, PKCE, scope accumulation, sharing the Client ID
 - [Compared with other tools](docs/COMPARISON.md): when to use it and when not, use cases
 - [Architecture](docs/ARCHITECTURE.md): design, queue and acks, security model
 - [Running agents for days](docs/RUNNING.md): live sessions vs headless dispatch, Claude Code limits
@@ -141,7 +159,7 @@ The full comparison of about 20 tools, use cases and sources is in
 
 ## Status and limits
 
-Version 0.2.0: early. Linux is the tested platform; macOS and Windows should work
+Version 0.3.0: early. Linux is the tested platform; macOS and Windows should work
 but are not covered by CI yet. One person per daemon. Replies arrive
 within about 30 seconds, not instantly. See
 [Limits and known gaps](docs/ARCHITECTURE.md#14-limits-and-known-gaps).

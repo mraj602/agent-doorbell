@@ -199,7 +199,7 @@ only run `doorbell` commands can write drafts, and can post only if you granted 
 | Control | Where |
 |---|---|
 | The daemon never calls an LLM. The watcher token only needs read scopes; `identity add` rejects tokens missing scopes and warns about extra ones. | `server.py` |
-| The token lives in a file only you can read (`identity add` rejects group- or world-readable files on Linux and macOS), or, if it can post, only sealed. `doorbell login` uses PKCE with no client secret, checks `state`, and its listener binds 127.0.0.1 and serves one request. | `cli.py`, `server.py` |
+| The token lives in a file only you can read (`identity add` rejects group- or world-readable files on Linux and macOS), or, if it can post, only sealed (a login-made file token that becomes able to post is dropped by the daemon). `doorbell login` uses PKCE with no client secret, checks `state`, and its listener binds 127.0.0.1 and serves one request. | `cli.py`, `server.py` |
 | The daemon listens on 127.0.0.1 only, and every request must carry a random access key that the daemon writes to `endpoint.json` (mode 600) at start. Other users on the machine can't use it. | `daemon.py`, `server.py` |
 | An agent can only claim and ack its own items. | `server.py` |
 | Subscription changes the agent makes are audited and pop a desktop notification. | `server.py` |
@@ -240,37 +240,68 @@ client secret.
 1. The CLI makes a random 64-character PKCE verifier and a `state`, and starts a listener on
    `127.0.0.1` at the redirect URI (default `http://localhost:8765/doorbell/callback`).
 2. It prints the authorize link (`/oauth/v2/authorize` with `client_id`, `user_scope`,
-   `redirect_uri`, `state` and the S256 `code_challenge`) and opens the browser.
+   `redirect_uri`, `state` and the S256 `code_challenge`) and opens the browser. Without
+   `--for`, `user_scope` is the read scopes only.
 3. The person clicks Allow. Slack redirects to the listener with `code` and `state`. The
    listener checks `state`, answers with a small page, serves that one request and stops.
    An `error` in the query (for example `access_denied`) ends the login with that error.
+   If the browser is on another machine, the redirect never reaches the listener. When
+   `login` runs in a terminal it also reads a line from the person: the address the browser
+   ended on. That line goes to the same listener, with the same `state` check. The code is
+   single-use, short-lived and useless without the verifier, which stays in the process.
 4. The CLI posts `code`, `code_verifier`, `client_id` and `redirect_uri` to `oauth.v2.access`.
-   The response has the user token, its scopes and, for apps with token rotation or PKCE, a
-   refresh token and `expires_in`.
+   The response has the user token, its scopes and a refresh token and `expires_in`.
+
+**Slack adds up scopes.** Slack accumulates the scopes one person has approved for one app,
+across all of that person's tokens for the app, while any of them is alive. A read-only
+request can therefore return `chat:write` if the person approved it before, even through
+another tool. Revoking one token doesn't remove scopes; only revoking all of the person's
+tokens for the app resets it. Approvals are per person. So Doorbell never assumes what a
+sign-in returns: it decides from the token's scopes.
 
 What is stored depends on what the token can do. The credentials JSON is
-`{v, token, refresh_token, expires_at, client_id, user_id, team_id, scopes}`.
+`{v, token, refresh_token, expires_at, obtained_at, client_id, user_id, team_id, scopes}`.
 
 | Login | Token | Stored as | Identity |
 |---|---|---|---|
-| `--for watch` | read scopes | `credentials/<user ID>.json`, mode 600, written atomically | `mode=file`, `token_file` points at it |
-| `--for send` | `chat:write` | sealed as the sender (like `sender add`) | unchanged |
-| `--for both` | read scopes + `chat:write` | sealed, as sender and as the identity's token. No file | `mode=sealed`, `locked` after each daemon start |
+| no flag, token can't post | read scopes | `credentials/<user ID>.json`, mode 600, written atomically | `mode=file`, `token_file` points at it (layout A) |
+| no flag, token can post | read scopes + `chat:write` | sealed, as sender and as the identity's token. No file. Owner in a terminal only; otherwise the token is revoked and nothing is saved | `mode=sealed`, `locked` after each daemon start (layout B) |
+| `--send` / `--for send`, other app | `chat:write` | sealed as the sender (like `sender add`) | unchanged (layout C) |
+| `--send` / `--for send`, same app as the identity (or it is sealed) | read + `chat:write` | as the row above; the old file token is revoked and its file deleted | `mode=sealed` (layout B) |
+| `--for watch` | read scopes | as the first row; refuses (and revokes) a token that can post | `mode=file` |
+| `--for both` | read scopes + `chat:write` | sealed, no file | `mode=sealed` |
 
-The rule: **a token that can post is never stored in a plain file.** A watch login refuses a
-token with `chat:write`. A sealed identity is `locked` after a daemon start: it isn't polled,
-you get a notification, and `doorbell unlock` decrypts the token into memory and resumes
-polling from the saved cursors, so nothing is missed.
+The rule: **a token that can post is never stored in a plain file.** A sealed identity is
+`locked` after a daemon start: it isn't polled, you get a notification, and `doorbell unlock`
+decrypts the token into memory and resumes polling from the saved cursors, so nothing is
+missed. `doorbell lock` on a sealed identity locks it the same way.
 
-**Renewal.** On each lifecycle tick the daemon looks at every credential whose `expires_at` is
-less than an hour away and calls `oauth.v2.access` with `grant_type=refresh_token` (and the
-`client_id`, no secret). Each refresh returns a new refresh token. The daemon writes the new
-credentials with a temporary file and `os.replace` (mode 600), or reseals them, and resets its
-cached Slack client. With PKCE, a refresh token lasts 30 days, so a machine off for longer
-needs `doorbell login` again. If renewal fails, or the token expired with no refresh token, the
-identity becomes `needs_login` with the error, polling for it stops, one notification fires,
-and `status` and `doctor` say to run `doorbell login`. Cursors are kept. A sealed credential
-can only be renewed while unlocked, so one that expired while locked is renewed at unlock.
+**The file-token guard.** On each poll the daemon checks the scopes Slack reports for a file
+token that `doorbell login` wrote. If it can now post (the person approved `chat:write` for the
+app somewhere), the daemon stops using it, sets `needs_login` and notifies once. `doorbell
+login` then seals it. Token files the person made by hand aren't touched.
+
+**Renewal.** Tokens from a localhost sign-in rotate: they expire after 12 hours. On each
+lifecycle tick the daemon renews a credential when it has less than `renew_before` (an hour)
+left, or less than half its life, whichever is smaller, so it renews at most once per half
+life. It calls `oauth.v2.access` with `grant_type=refresh_token` and the `client_id`, no
+secret. Each refresh returns a new refresh token. The daemon writes the new credentials with a
+temporary file and `os.replace` (mode 600), or reseals them, and resets its cached Slack
+client. With PKCE, a refresh token lasts 30 days, so a machine off for longer needs `doorbell
+login` again. If renewal fails, or Slack reports the token expired and it can't be renewed,
+the identity becomes `needs_login` with the error, polling for it stops, one notification
+fires, and `status` and `doctor` say to run `doorbell login`. Cursors are kept. A network
+error only retries on the next tick. A sealed credential can only be renewed while unlocked,
+so one that expired while locked is renewed at unlock.
+
+**Logout.** `doorbell logout [--as U]` revokes the identity's tokens with `auth.revoke`
+(the sealed one needs the password), deletes a credentials file Doorbell wrote and the sealed
+sender and its grants, and sets the identity to `needs_login`. Agents and cursors stay.
+Revoking doesn't take scopes away while another token of the same person for the app (another
+tool) is alive.
+
+**Status.** Each identity in `status` shows `mode` (`file` or `sealed`), `status` (`ok`,
+`locked`, `needs_login`, `broken`), `token_expires_in_s`, `client_id`, and a `next` hint.
 
 References: [Using PKCE](https://docs.slack.dev/authentication/using-pkce),
 [Installing with OAuth](https://docs.slack.dev/authentication/installing-with-oauth).
@@ -294,8 +325,9 @@ and macOS, `%LOCALAPPDATA%\doorbell` on Windows (override with `DOORBELL_HOME`).
 | Laptop asleep or off | Cursors catch up on wake, within Slack's history limits (90 days visible on free plans). |
 | Slack rate limit (429) | `Retry-After` honoured; quiet conversations slow down first. |
 | Token revoked or scope removed | The identity is marked broken, polling for it stops, and you get a notification. |
-| Token renewal fails or the refresh token expired | The identity is `needs_login`, polling for it stops, you get one notification, and cursors are kept. Run `doorbell login`. |
-| Restart with a sealed identity (single-token mode) | The identity is `locked` until `doorbell unlock`, then polling resumes from the cursors. |
+| Token renewal fails or the refresh token expired (30 days off) | The identity is `needs_login`, polling for it stops, you get one notification, and cursors are kept. Run `doorbell login`; it catches up. |
+| A file token from `login` becomes able to post | The daemon stops using it, sets `needs_login` and notifies once. `doorbell login` seals it. |
+| Restart with a sealed identity (single-token mode) | The identity is `locked` (one notification) until `doorbell unlock`, then polling resumes from the cursors. `doorbell lock` does the same on demand. |
 | Backlog not consumed for 15 minutes | Desktop notification: "agent X isn't consuming". |
 
 ## 12. Why polling? Comparison with Slack events and webhooks
@@ -355,7 +387,7 @@ happened. With Agent Doorbell the same day with three real messages costs three 
 - **Sending is unlocked by hand after every restart.** The decrypted sender token is kept in
   memory only, so after a reboot granted agents draft instead of sending until you run
   `doorbell unlock`. In single-token mode (layout B) watching waits for the unlock too, then
-  catches up. To watch through reboots unattended and still send, use two apps (layout C).
+  catches up. To watch through reboots unattended and still send, use two different apps (layout C): with one app, Slack's accumulated scopes would let the watching token post too.
 - **PKCE can't be turned off.** Enabling it makes the Slack app a public client, and only
   Slack support can undo that. With PKCE, refresh tokens last 30 days.
 - **One person per daemon.** Several identities work technically, but each person should
