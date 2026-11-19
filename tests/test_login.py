@@ -40,7 +40,7 @@ def free_port():
 
 
 def err(fn, *a, **kw):
-    with pytest.raises(Exception) as e:
+    with pytest.raises((Exception, SystemExit)) as e:
         fn(*a, **kw)
     return str(e.value)
 
@@ -162,7 +162,8 @@ def watch_dm(e):
     dm = e.mock.add_dm(u)
     name = e.register({"dms": "all"})
     e.mock.post(dm, "first", user=u)
-    e.wait_items(name, claim=True)
+    first = e.wait_items(name, claim=True)
+    e.call("ack", name=name, seqs=[i["seq"] for i in first])
     e.settle(dm)
     return name, dm, u
 
@@ -435,7 +436,9 @@ def test_login_for_watch_refuses_a_token_that_can_post(make_env):
         return out
     e.mock.m_oauth_v2_access = extra
     r = run_login(e, "--client-id", cid, "--redirect-uri", redirect, "--for", "watch")
-    assert r.code != 0 and "chat:write" in r.stderr and "both" in r.stderr
+    assert r.code != 0 and "chat:write" in r.stderr and "sealed" in r.stderr
+    # the refused token isn't left behind at Slack
+    assert any(c["method"] == "auth.revoke" for c in e.mock.calls)
     assert not (e.home / "credentials").exists() or not list((e.home / "credentials").iterdir())
     assert e.call("status")["identities"] == []
     assert_no_secret(list(e.mock.issued), r.stdout, r.stderr)
@@ -443,7 +446,17 @@ def test_login_for_watch_refuses_a_token_that_can_post(make_env):
 
 def test_login_with_missing_read_scopes_adds_nothing(make_env):
     e = make_env()
-    cid, port, redirect = new_app(e, [s for s in READ if s != "im:history"])
+    cid, port, redirect = new_app(e, READ)
+    orig = e.mock.m_oauth_v2_access
+
+    def fewer(p):   # an admin removed a scope after approval: the token comes back without it
+        out = orig(p)
+        if "authed_user" in out:
+            short = [s for s in READ if s != "im:history"]
+            e.mock.issued[out["authed_user"]["access_token"]]["scopes"] = short
+            out["authed_user"]["scope"] = ",".join(short)
+        return out
+    e.mock.m_oauth_v2_access = fewer
     r = run_login(e, "--client-id", cid, "--redirect-uri", redirect)
     assert r.code != 0 and "im:history" in r.stderr
     assert e.call("status")["identities"] == []
@@ -628,7 +641,9 @@ def test_sender_add_token_json_validates_like_a_file(make_env):
     creds = get_creds(e, cid, READ, redirect)
     f = write_creds(e, creds)
     e.call("identity_add", token_file=str(f))
-    assert "missing scopes ['chat:write']" in err(e.call, "sender_add", token_json=json.dumps(creds), password=PW)
+    assert "watcher's token" in err(e.call, "sender_add", token_json=json.dumps(creds), password=PW)
+    other = get_creds(e, cid, READ, redirect)     # a second read-only sign-in: can't send either
+    assert "missing scopes ['chat:write']" in err(e.call, "sender_add", token_json=json.dumps(other), password=PW)
     assert e.call("status")["sending"] == {}
 
 
@@ -756,3 +771,149 @@ def test_a_token_is_never_printed(make_env):
         x = e.cli(*cmd, check=False)
         outs += [x.stdout, x.stderr]
     assert_no_secret(secrets_of(creds) + [creds["token"].split("xoxp-")[-1]], *outs)
+
+
+# ---------- automatic layout, scope guard, logout (found in live tests) ----------
+def grant_more(e, extra):
+    """Slack adds up what one person allowed one app, for all their tokens: after they approve
+    chat:write anywhere, every token they hold for the app can post."""
+    orig = e.mock.m_oauth_v2_access
+
+    def more(p):
+        out = orig(p)
+        if "authed_user" in out:
+            tok = out["authed_user"]["access_token"]
+            e.mock.issued[tok]["scopes"] = sorted(set(e.mock.issued[tok]["scopes"]) | set(extra))
+            out["authed_user"]["scope"] = ",".join(e.mock.issued[tok]["scopes"])
+        return out
+    e.mock.m_oauth_v2_access = more
+
+
+def test_auto_login_read_only_is_layout_a(make_env):
+    e = make_env()
+    cid, _, redirect = new_app(e, BOTH)
+    r = run_login(e, "--client-id", cid, "--redirect-uri", redirect)
+    assert r.code == 0, r.stderr
+    i = ident(e)
+    assert (i["mode"], i["status"]) == ("file", "ok") and "read-only" in r.stdout
+    req = next(c for c in e.mock.calls if c["method"] == "oauth.v2.access")
+    tok = json.loads((e.home / "credentials" / f"{e.me}.json").read_text())["token"]
+    assert "chat:write" not in e.mock.issued[tok]["scopes"]        # it asked for read scopes only
+    assert e.call("status")["sending"] == {}
+
+
+def test_auto_login_that_can_post_is_never_saved_without_the_owner(make_env):
+    e = make_env()
+    cid, _, redirect = new_app(e, BOTH)
+    grant_more(e, ["chat:write"])
+    r = run_login(e, "--client-id", cid, "--redirect-uri", redirect)    # no terminal: like an agent
+    assert r.code != 0 and "can also post" in r.stderr and "owner" in r.stderr
+    assert e.call("status")["identities"] == []
+    assert not (e.home / "credentials").exists() or not list((e.home / "credentials").iterdir())
+    revoked = [c["token"] for c in e.mock.calls if c["method"] == "auth.revoke"]
+    assert revoked and revoked[0] in e.mock.revoked
+    assert_no_secret(revoked, r.stdout, r.stderr)
+
+
+def test_a_login_file_token_that_gains_chat_write_stops_being_used(make_env):
+    e = make_env()
+    cid, _, redirect = new_app(e, BOTH)
+    creds = get_creds(e, cid, READ, redirect)
+    e.call("identity_add", token_file=str(write_creds(e, creds)))
+    prime(e)
+    name, dm, u = watch_dm(e)
+    e.mock.issued[creds["token"]]["scopes"] = BOTH                   # approved chat:write elsewhere
+    until(lambda: ident(e)["status"] == "needs_login", 15, "needs_login after the token can post")
+    assert "can now post" in ident(e)["error"]
+    assert sum("login" in a.lower() for a in alerts(e)) == 1
+
+
+def test_identity_add_refuses_a_login_file_that_can_post(make_env):
+    e = make_env()
+    cid, _, redirect = new_app(e, BOTH)
+    creds = get_creds(e, cid, BOTH, redirect)
+    assert "sealed" in err(e.call, "identity_add", token_file=str(write_creds(e, creds)))
+
+
+def test_login_both_retires_the_old_login_file(make_env):
+    e = make_env()
+    cid, _, redirect = new_app(e, BOTH)
+    old = get_creds(e, cid, READ, redirect)
+    f = write_creds(e, old)
+    e.call("identity_add", token_file=str(f))
+    res = e.call("login_both", token_json=json.dumps(get_creds(e, cid, BOTH, redirect)), password=PW)
+    assert "revoked" in res["retired"] and not f.exists() and old["token"] in e.mock.revoked
+    assert ident(e)["mode"] == "sealed"
+
+
+def test_sender_remove_deletes_the_sealed_sender(make_env):
+    """0.2.0 bug: the DELETE was inside a comment, so the sealed token stayed."""
+    e = make_env()
+    cid, _, redirect = new_app(e, BOTH)
+    e.call("identity_add", token_file=str(write_creds(e, get_creds(e, cid, READ, redirect))))
+    e.call("sender_add", token_json=json.dumps(get_creds(e, cid, WRITE_ONLY, redirect)), password=PW)
+    e.call("sender_remove", password=PW)
+    assert e.db().execute("SELECT count(*) n FROM sender").fetchone()["n"] == 0
+    assert e.call("status")["sending"] == {}
+
+
+def test_sender_remove_refuses_in_single_token_mode(both):
+    assert "single-token" in err(both.call, "sender_remove", password=PW)
+
+
+def test_logout_revokes_and_forgets(make_env):
+    e = make_env()
+    cid, _, redirect = new_app(e, BOTH)
+    creds = get_creds(e, cid, READ, redirect)
+    f = write_creds(e, creds)
+    e.call("identity_add", token_file=str(f))
+    res = e.call("logout")
+    assert "watch token revoked" in res["done"] and not f.exists() and creds["token"] in e.mock.revoked
+    i = ident(e)
+    assert i["status"] == "needs_login" and i["token_file"] is None
+
+
+def test_logout_in_single_token_mode_needs_the_password(both):
+    e = both
+    assert "wrong password" in err(e.call, "logout", password="nope nope nope")
+    res = e.call("logout", password=PW)
+    assert "sending token revoked" in res["done"] and e.creds["token"] in e.mock.revoked
+    assert e.call("status")["sending"] == {} and ident(e)["status"] == "needs_login"
+
+
+def test_lock_pauses_watching_in_single_token_mode(both):
+    e = both
+    prime(e)
+    name, dm, u = watch_dm(e)
+    assert "paused" in e.call("lock")["watching"]
+    assert ident(e)["status"] == "locked"
+    t = time.time()
+    e.mock.post(dm, "while locked", user=u)
+    time.sleep(2)
+    assert e.mock.count("conversations.history", since=t) == 0
+    e.call("unlock", password=PW)
+    assert texts(e.wait_items(name)[0]) == ["while locked"]
+
+
+def test_pasted_redirect_address_completes_the_login(make_env):
+    """SSH: the browser is on another machine, so the person pastes the localhost address."""
+    e = make_env()
+    cid, port, redirect = new_app(e, READ)
+    verifier, challenge = oauth.pkce_pair()
+    url = oauth.authorize_url(cid, READ, redirect, "st-paste", challenge, oauth_base=e.mock.base)
+    where = e.mock.authorize(qs(url))                  # what the far browser's address bar shows
+    got = {}
+    t = threading.Thread(target=lambda: got.update(code=oauth.wait_for_code(redirect, "st-paste", timeout=10)),
+                         daemon=True)
+    t.start()
+    def up():
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=1).close()
+            return True
+        except OSError:
+            return False
+    until(up, 5, "listener up")
+    lines = iter(["not a url", where])
+    oauth.read_pasted(redirect, lambda: next(lines))
+    t.join(10)
+    assert got.get("code") == qs(where)["code"]

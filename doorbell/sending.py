@@ -27,7 +27,7 @@ import time
 
 from . import seal, store
 from . import oauth
-from .slackapi import Slack, creds_from_text, read_creds, read_token
+from .slackapi import Slack, SlackError, creds_from_text, read_creds, read_token
 
 SEND_SCOPES = {"chat:write"}
 MAX_TEXT = 12000
@@ -324,6 +324,11 @@ async def op_unlock(d, req):
     creds, enc, grant_key = await open_with_password(d, ident, req.get("password"))
     set_unlocked(d, ident, creds, enc, grant_key)
     renewed = await renew_sealed(d, ident)   # it may have expired while locked
+    if renewed and creds.get("refresh_token") and ident in d.unlocked:
+        try:   # Slack may have ended it early; one cheap check
+            await asyncio.to_thread(slack_for(d, d.unlocked[ident][0]).call, "auth.test")
+        except SlackError as e:
+            renewed = e.error == "token_expired" and await renew_sealed(d, ident, force=True)
     store.audit(d.db, "unlock", identity=ident)
     if not renewed:
         raise ValueError("the password is right, but the stored sign-in has expired and couldn't be renewed; "

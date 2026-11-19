@@ -41,7 +41,7 @@ def scopes_for(role, with_reactions=True):
     return {"watch": READ_SCOPES, "send": SEND_SCOPES + extra, "both": READ_SCOPES + SEND_SCOPES + extra}[role]
 
 
-def oauth_base():
+def default_oauth_base():
     return os.environ.get("DOORBELL_SLACK_OAUTH", "https://slack.com").rstrip("/")
 
 
@@ -51,12 +51,12 @@ def pkce_pair():
     return verifier, challenge
 
 
-def authorize_url(client_id, user_scopes, redirect_uri, state, challenge, team=None, oauth_base_url=None):
+def authorize_url(client_id, user_scopes, redirect_uri, state, challenge, team=None, oauth_base=None):
     q = {"client_id": client_id, "scope": "", "user_scope": ",".join(user_scopes), "redirect_uri": redirect_uri,
          "state": state, "code_challenge": challenge, "code_challenge_method": "S256"}
     if team:
         q["team"] = team
-    return f"{(oauth_base_url or oauth_base())}/oauth/v2/authorize?{urllib.parse.urlencode(q)}"
+    return f"{(oauth_base or default_oauth_base())}/oauth/v2/authorize?{urllib.parse.urlencode(q)}"
 
 
 PAGE = """<!doctype html><meta charset="utf-8"><title>Agent Doorbell</title>
@@ -99,7 +99,7 @@ def wait_for_code(redirect_uri, state, timeout=300):
                 result.setdefault("error", "the sign-in response had no code")
                 title, body = "Sign-in failed", "No code in the response. Run `doorbell login` again."
             raw = PAGE.format(title=title, body=body).encode()
-            self.send_response(200)
+            self.send_response(200 if "code" in result and "error" not in result else 400)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
@@ -115,7 +115,7 @@ def wait_for_code(redirect_uri, state, timeout=300):
     t.start()
     try:
         if not done.wait(timeout):
-            raise LoginError(f"no sign-in within {int(timeout)} seconds")
+            raise LoginError(f"timed out: no sign-in within {int(timeout)} seconds")
     finally:
         srv.shutdown()
         srv.server_close()

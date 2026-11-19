@@ -47,6 +47,7 @@ class MockSlack:
         self.oauth_apps = {}       # client_id -> {"user_scopes", "redirect_urls", "rotate", "expires_in", ...}
         self.pending_codes = {}    # code -> {client_id, challenge, redirect_uri, user_scopes, user_id}
         self.issued = {}           # access token -> {user_id, scopes, expires_at | None}
+        self.revoked = set()       # tokens revoked with auth.revoke
         self.refresh_tokens = {}   # refresh token -> {client_id, user_id, scopes, expires_at}
         self.max_page = None     # cap on page size, to exercise cursor pagination
         self._n = 0
@@ -201,9 +202,14 @@ class MockSlack:
             self.calls.append({"method": method, "params": params, "t": time.time(), "token": token})
             if method in self.errors:
                 return 200, {"ok": False, "error": self.errors[method]}
+            if token and token in self.revoked:
+                return 200, {"ok": False, "error": "token_revoked"}
             tok = self.issued.get(token)
             if tok and tok["expires_at"] is not None and tok["expires_at"] <= time.time():
                 return 200, {"ok": False, "error": "token_expired"}
+            if method == "auth.revoke":
+                self.revoked.add(token)
+                return 200, {"ok": True, "revoked": True}
             fn = getattr(self, "m_" + method.replace(".", "_"), None)
             if not fn:
                 return 200, {"ok": False, "error": "unknown_method"}

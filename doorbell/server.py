@@ -359,7 +359,10 @@ async def op_doctor(d, req):
     out = {"config": {k: d.cfg[k] for k in ("slack_api_base", "agent_app_ids", "idle_ttl", "lease")},
            "identities": []}
     for r in d.q("SELECT * FROM identities"):
-        info = {"user_id": r["user_id"], "team_url": r["team_url"], "status": r["status"]}
+        info = {"user_id": r["user_id"], "team_url": r["team_url"], "mode": r["mode"], "status": r["status"]}
+        if r["status"] != "ok":
+            info["error"] = r["error"]
+            info["next"] = identity_dict(d, r).get("next")
         try:
             if r["mode"] == "sealed" and r["user_id"] not in d.unlocked:
                 raise ValueError("locked; run `doorbell unlock`")
