@@ -302,7 +302,8 @@ its read-only token; sending uses a second token.
    file the same way as in step 2 (for example `~/.config/doorbell/sender-token`).
 2. **Add it, in your own terminal:** `doorbell sender add --token-file ~/.config/doorbell/sender-token`.
    It asks for a new sending password (8 characters or more). The token is sealed with it in
-   Doorbell's database; delete the file afterwards.
+   Doorbell's database. **Delete the token file afterwards**: a readable token file is all an
+   agent would need to set up sending of its own.
 3. **Tell the agent how to reply.** In `AGENTS.md`, under "How you may reply", keep the
    Doorbell draft or send line. The agent's commands are in its protocol section.
 
@@ -316,14 +317,17 @@ once, and lets you approve, edit and approve, reject or skip each one. Or use
 notification). Allow it with `doorbell grant <agent>` (password). A granted agent's
 `doorbell send <seq> --text ...` posts as you, but only into the conversation of one of its
 own open items (a channel message is answered in its thread), at most `send_rate_per_hour`
-times an hour (default 20). `doorbell react <seq> <emoji>` adds a reaction the same way.
-Take it back with `doorbell revoke <agent>`.
+times an hour (default 20, reactions included). `doorbell react <seq> <emoji>` adds a
+reaction the same way. `@channel`, `@here` and `@everyone` in a direct send become plain
+text. The grant covers the agent's subscription as it is when you grant: if the subscription
+changes (`doorbell sub`, or `sub.yaml` and `doorbell register`), grant again. Take it back
+with `doorbell revoke <agent>`.
 
 **After a restart Doorbell is locked.** The decrypted token lives only in the daemon's memory,
 so after a reboot or a daemon restart, direct sends fail (the agent drafts instead, and you
 get a notification) until you run `doorbell unlock`. `doorbell lock` stops all direct sends at
-once. `doorbell passwd` changes the password; `doorbell sender remove` deletes the sealed
-token and every grant.
+once. `doorbell passwd` changes the password; `doorbell sender remove` (password) deletes the
+sealed token and every grant.
 
 | Command | Who | Password |
 |---|---|---|
@@ -332,8 +336,8 @@ token and every grant.
 | `doorbell request-send --why "..."` | agent | no |
 | `doorbell sender add --token-file F` | you | sets it |
 | `doorbell review`, `doorbell approve <id>` | you | yes |
-| `doorbell grant <agent>`, `doorbell unlock`, `doorbell passwd` | you | yes |
-| `doorbell reject <id>`, `doorbell revoke <agent>`, `doorbell lock`, `doorbell sender remove`, `doorbell drafts` | you | no |
+| `doorbell grant <agent>`, `doorbell unlock`, `doorbell passwd`, `doorbell sender remove` | you | yes |
+| `doorbell reject <id>`, `doorbell revoke <agent>`, `doorbell lock`, `doorbell drafts` | you | no |
 
 The password commands need a terminal and refuse to run inside an AI agent session. That's a
 convenience; the protection is that agents don't know the password. An agent that may run any
@@ -443,6 +447,7 @@ send_footer: ""                 # appended to messages Doorbell sends, e.g. " _(
 | Item `stuck` | `doorbell status` shows it; fix the cause, then `doorbell retry <seq>`. |
 | `send`: `may not send directly` | The agent isn't granted. It should draft; you can `doorbell grant <agent>`. |
 | `send`: `Doorbell is locked` | The daemon restarted. Run `doorbell unlock`. |
+| `send`: `no longer matches` | The agent's subscription changed since you granted it. Check it with `doorbell status`, then `doorbell grant <agent>` again. |
 | `sender add`: `missing scopes` | The sender token needs `chat:write`. Use `slack-app-manifest-sender.yaml`. |
 | `... is for the owner, in their own terminal` | You ran a password command inside an agent session or without a terminal. Run it in your own terminal. |
 | Dispatcher logs `backing off` | Runs are resolving nothing. Run the agent command by hand in the folder to see the error. |

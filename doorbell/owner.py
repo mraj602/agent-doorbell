@@ -7,6 +7,7 @@ an agent that tries them gets a clear "this is for your owner" instead of a hang
 """
 import getpass
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -75,13 +76,25 @@ def edit_text(text):
         lines.append(line)
 
 
+CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+BROADCAST = re.compile(r"<!(channel|here|everyone)")
+
+
+def safe(s):
+    """Text from Slack or from an agent, made safe to print: no escape sequences or carriage
+    returns that could make a draft look different from what would be sent."""
+    return CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}", s or "")
+
+
 def show(dr):
-    print(f"\n#{dr['id']} from agent {dr['agent']}, {dr['to']}")
+    print(f"\n#{dr['id']} from agent {safe(dr['agent'])}, {safe(dr['to'])}")
     for m in dr["replying_to"]:
-        print(textwrap.indent(textwrap.fill(f"{m['user']}: {m['text'] or ''}", 100), "  > "))
-    print(textwrap.indent(dr["text"], "  "))
+        print(textwrap.indent(textwrap.fill(f"{safe(m['user'])}: {safe(m['text'])}", 100), "  > "))
+    print(textwrap.indent(safe(dr["text"]), "  | "))
+    if BROADCAST.search(dr["text"]):
+        print("  ! this draft notifies everyone in the channel (@channel, @here or @everyone)")
     if dr.get("error"):
-        print(f"  (last attempt failed: {dr['error']})")
+        print(f"  ! last attempt failed: {safe(dr['error'])}")
 
 
 def review(call):
@@ -102,20 +115,26 @@ def review(call):
                     if not text:
                         print("Empty text; skipped.")
                         break
-                pw = pw or getpass.getpass("Sending password: ")
-                try:
-                    res = call("approve", id=dr["id"], text=text, password=pw)
-                except SystemExit as e:
-                    print(e)
-                    if "wrong password" in str(e):
+                res = None
+                for _ in range(3):
+                    pw = pw or getpass.getpass("Sending password: ")
+                    try:
+                        res = call("approve", id=dr["id"], text=text, password=pw)
+                        break
+                    except SystemExit as e:
+                        print(e)
+                        if "wrong password" not in str(e):
+                            break
                         pw = None
-                        continue
-                    break
-                print(f"Sent (ts {res['sent']}).")
+                if res:
+                    print(f"Sent (ts {res['sent']}).")
                 break
             if c == "r":
-                call("reject", id=dr["id"])
-                print("Rejected.")
+                try:
+                    call("reject", id=dr["id"])
+                    print("Rejected.")
+                except SystemExit as e:
+                    print(e)
                 break
             if c == "s":
                 break

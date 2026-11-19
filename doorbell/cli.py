@@ -332,7 +332,7 @@ def run_owner(args):
         return out(call("sender_add", token_file=str(Path(args.token_file).expanduser().resolve()),
                         password=pw, old_password=old))
     if c == "sender":
-        return out(call("sender_remove", identity=args.identity))
+        return out(call("sender_remove", identity=args.identity, password=owner.ask_password("sender remove")))
     if c == "unlock":
         return out(call("unlock", identity=args.identity, password=owner.ask_password("unlock")))
     if c == "lock":

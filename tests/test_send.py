@@ -97,6 +97,7 @@ def test_sender_add_needs_chat_write(make_env):
     assert e.call("status")["sending"] == {}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Unix file modes")
 def test_sender_add_refuses_a_readable_token_file(senv):
     f = senv.home / "open-token"
     f.write_text(SENDER + "\n")
@@ -151,7 +152,7 @@ def test_send_needs_a_grant_and_request_send_notifies(s):
     st = s.call("status")
     assert {"agent": name, "why": "routine build questions"} in st["send_requests"]
     alerts = [json.loads(r["detail"])["msg"] for r in s.db().execute("SELECT detail FROM audit WHERE kind='alert'")]
-    assert any(f"doorbell grant {name}" in m for m in alerts)
+    assert any(f"Agent {name} asks to send" in m and "routine build questions" in m for m in alerts)
     assert "wrong password" in err(s.call, "grant", agent=name, password="guess guess")
     s.call("grant", agent=name, password=PW)
     assert name not in [r["agent"] for r in s.call("status")["send_requests"]]
@@ -269,3 +270,119 @@ def test_agent_commands_read_text_from_stdin(s):
     did = json.loads(r.stdout)["draft"]
     d = next(x for x in s.call("drafts")["drafts"] if x["id"] == did)
     assert d["text"] == "line 1\n`code` and \"quotes\""
+
+
+# ---------- from the security review ----------
+def test_sender_remove_needs_the_password_so_it_cant_be_reset(s):
+    assert "wrong password" in err(s.call, "sender_remove", password="not it at all")
+    assert s.call("status")["sending"]          # still there
+    # Replacing the token also needs the current password.
+    assert "wrong password" in err(s.call, "sender_add", token_file=str(s.sender_file), password="attacker pw",
+                                   old_password="guessing!")
+
+
+def test_sender_add_refuses_the_watcher_token(s):
+    assert "watcher's token" in err(s.call, "sender_add", token_file=str(s.token_file), password=PW, old_password=PW)
+
+
+def test_grant_stops_working_when_the_subscription_changes(s):
+    name, dm, it = dm_item(s)
+    s.call("grant", agent=name, password=PW)
+    s.call("sub", name=name, action="set", key="everyone_in", values=[s.mock.add_channel("all-hands")],
+           why="widen")
+    assert "no longer matches" in err(s.call, "send", name=name, seq=it["seq"], text="x")
+    s.call("grant", agent=name, password=PW)
+    s.call("send", name=name, seq=it["seq"], text="ok now")
+
+
+def test_reregistering_or_deregistering_drops_the_grant(s):
+    name, dm, it = dm_item(s)
+    s.call("grant", agent=name, password=PW)
+    s.call("deregister", name=name)
+    assert name not in s.call("status")["sending"][s.me]["granted"]
+    s.call("register", name=name, sub={"dms": "all"})
+    s.mock.post(dm, "hello again", user=s.mock.channels[dm]["meta"]["user"])
+    nxt = s.wait_items(name, claim=True)[0]
+    assert "may not send directly" in err(s.call, "send", name=name, seq=nxt["seq"], text="x")
+
+
+def test_parallel_sends_of_one_item_post_once(s):
+    import threading
+    name, dm, it = dm_item(s)
+    s.call("grant", agent=name, password=PW)
+    results = []
+
+    def go():
+        try:
+            results.append(s.call("send", name=name, seq=it["seq"], text="once"))
+        except SystemExit as e:
+            results.append(str(e))
+    ts = [threading.Thread(target=go) for _ in range(5)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert [p["text"] for p in posted(s, dm)] == ["once"]
+    assert sum(isinstance(r, dict) for r in results) == 1
+
+
+def test_reactions_count_toward_the_limit_and_broadcasts_are_neutralised(s):
+    name, dm, it = dm_item(s)
+    s.call("grant", agent=name, password=PW)
+    s.call("send", name=name, seq=it["seq"], text="<!channel> heads up <!here|here>")
+    assert posted(s, dm)[0]["text"] == "@channel heads up @here"
+    user = s.mock.channels[dm]["meta"]["user"]
+    for i in range(2):
+        s.mock.post(dm, f"q{i}", user=user)
+        nxt = s.wait_items(name, claim=True)[0]
+        s.call("react", name=name, seq=nxt["seq"], emoji="eyes")
+    s.mock.post(dm, "q3", user=user)
+    nxt = s.wait_items(name, claim=True)[0]
+    assert "the limit" in err(s.call, "react", name=name, seq=nxt["seq"], emoji="eyes")
+    assert "not an emoji" in err(s.call, "react", name=name, seq=nxt["seq"], emoji="a b")
+
+
+def test_passwd_drops_a_grant_written_straight_into_the_database(make_env):
+    import sqlite3
+    e = make_env()
+    e.add_identity()
+    e.mock.token_scopes[SENDER] = REQUIRED_SCOPES + ["chat:write"]
+    f = e.home / "sender"
+    f.write_text(SENDER + "\n")
+    f.chmod(0o600)
+    e.call("sender_add", token_file=str(f), password=PW)
+    good, bad = e.register({"dms": "all"}), e.register({"dms": "none"})
+    e.call("grant", agent=good, password=PW)
+    db = sqlite3.connect(e.home / "doorbell.db", timeout=10)
+    db.execute("INSERT INTO grants VALUES(?,?,?,?)", (e.me, bad, "00" * 32, 0))
+    db.commit()
+    db.close()
+    e.call("passwd", old_password=PW, password="another password")
+    assert e.call("status")["sending"][e.me]["granted"] == [good]
+
+
+def test_wrong_passwords_slow_down_and_notify(make_env):
+    import time as _t
+    e = make_env()
+    e.add_identity()
+    e.mock.token_scopes[SENDER] = REQUIRED_SCOPES + ["chat:write"]
+    f = e.home / "sender"
+    f.write_text(SENDER + "\n")
+    f.chmod(0o600)
+    e.call("sender_add", token_file=str(f), password=PW)
+    t = _t.time()
+    for _ in range(3):
+        err(e.call, "unlock", password="wrong guess")
+    assert _t.time() - t >= 2 + 4          # 0 s, then 2 s, then 4 s before the checks
+    alerts = [r[0] for r in e.db().execute("SELECT detail FROM audit WHERE kind='alert'")]
+    assert any("wrong sending passwords" in a for a in alerts)
+    e.call("unlock", password=PW)          # the right one still works, and resets the delay
+    t = _t.time()
+    err(e.call, "unlock", password="wrong again")
+    assert _t.time() - t < 2
+
+
+def test_review_output_escapes_control_characters(capsys):
+    from doorbell import owner
+    owner.show({"id": 1, "agent": "a", "to": "to Pat", "text": "fine\x1b[2K\rmalicious <!channel>",
+                "replying_to": [{"user": "U1", "text": "hi\x1b]8;;x\x07"}], "error": None})
+    o = capsys.readouterr().out
+    assert "\x1b" not in o and "\r" not in o and "\\x1b" in o and "notifies everyone" in o

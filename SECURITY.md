@@ -41,12 +41,26 @@ Agent Doorbell is a volunteer project and has no bug bounty.
   `reactions:write`), stored encrypted with a key derived from a password you choose (scrypt,
   AES-256-GCM). The decrypted token is kept only in the daemon's memory, from the time you
   type the password (`sender add` or `unlock`) until the daemon stops or you run
-  `doorbell lock`. Approving a draft, granting an agent direct sending, unlocking and
-  changing the password all need the password; revoking, rejecting and locking don't.
+  `doorbell lock`. Adding, replacing or removing the sender token, approving a draft,
+  granting an agent direct sending, unlocking and changing the password all need the
+  password; revoking, rejecting and locking only take power away and don't. Password checks
+  run one at a time, get slower after each wrong password (up to a minute), and repeated
+  failures pop a notification.
 - **What an agent can send is checked by the daemon.** A granted agent can only post in the
-  conversation of one of its own open items, at most `send_rate_per_hour` times an hour.
-  Grants are signed with a key derived from the password, so writing to the database can't
-  forge one.
+  conversation of one of its own open items, and at most `send_rate_per_hour` messages and
+  reactions an hour; sends are serialised, so parallel calls can't exceed it or answer an
+  item twice. `@channel`, `@here` and `@everyone` in a direct send are turned into plain
+  text. A grant is signed with a key derived from the password and covers the agent's
+  registration and subscription as they were when you granted it: if the subscription
+  changes, or the agent is registered again, the grant stops working until you grant again.
+  Rows written straight into the database don't verify, and are dropped when the key
+  changes.
+- **The daemon can't tell which local process is calling.** Any process with the access key
+  can name any agent, so a grant works for whoever uses that agent's name. What a grant bounds
+  is where messages can go: the conversations that reached that agent's subscription.
+- **`doorbell review` shows text exactly.** Control characters in drafts and in the Slack
+  messages they answer are shown escaped, so a draft can't hide part of itself, and drafts
+  that notify a whole channel are flagged.
 - **Owner commands refuse to run inside an agent.** The commands that ask for the password
   need a terminal and stop when they see a known agent harness in the environment. This is a
   convenience guard, not a security boundary: the password is the boundary.

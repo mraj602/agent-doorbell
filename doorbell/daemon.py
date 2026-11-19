@@ -35,6 +35,9 @@ class Daemon:
         self.pause_until = 0
         self.slacks = {}
         self.unlocked = {}   # identity -> (sender token, grant key); memory only, gone on restart
+        self.sending_to = set()        # (identity, channel) while a post is in flight
+        self.send_lock = asyncio.Lock()      # one send at a time: checks and the post are atomic
+        self.password_lock = asyncio.Lock()  # one password check at a time (scrypt is 64 MB each)
         self.last_convlist = {}
         self.last_usergroups = {}
         self.last_userlist = {}
@@ -428,6 +431,8 @@ class Daemon:
 
     def observed_ack(self, identity, ch, m):
         """A message from me after an open item resolves it: as 'replied' if an agent app sent it."""
+        if (identity, ch) in self.sending_to:
+            return   # Doorbell is posting here right now; its own message isn't the owner's reply
         by_agent = m.get("app_id") in self.cfg["agent_app_ids"] or bool(
             self.q1("SELECT 1 FROM sent WHERE identity=? AND channel=? AND ts=?", identity, ch, m["ts"]))
         key = self.thread_key(m)
@@ -533,6 +538,10 @@ class Daemon:
         for t in ("deliveries", "items"):
             self.db.execute(f"DELETE FROM {t} WHERE agent_id=?", (agent_id,))
         self.db.execute("DELETE FROM item_msgs WHERE item_seq NOT IN (SELECT seq FROM items)")
+        a = self.q1("SELECT name FROM agents WHERE id=?", agent_id)
+        if a:
+            self.db.execute("DELETE FROM grants WHERE agent=?", (a["name"],))
+            self.db.execute("DELETE FROM send_requests WHERE agent=?", (a["name"],))
         self.db.execute("DELETE FROM agents WHERE id=?", (agent_id,))
 
     # ---------- main loops ----------

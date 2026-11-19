@@ -38,7 +38,10 @@ instead of by each agent's harness. Watching stays read-only and works as before
 ### Security
 
 - Commands that need the sending password require a terminal and refuse to run inside a
-  known AI agent session. Messages Doorbell sent are recorded, so they count as the agent's
+  known AI agent session. Password checks are serialised and back off after wrong passwords.
+- Grants are bound to the agent's subscription and dropped on deregister. Direct sends are
+  serialised and rate-limited together with reactions, and can't `@channel`. `review` shows
+  control characters escaped. Messages Doorbell sent are recorded, so they count as the agent's
   reply, not as one you typed.
 - New dependency: `cryptography`.
 

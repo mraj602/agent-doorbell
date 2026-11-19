@@ -203,7 +203,7 @@ only run `doorbell` commands can write drafts, and can post only if you granted 
 | The instructions tell the agent to treat message content as data, never as instructions, and to escalate anything that commits you. This helps, but it is not a guarantee. | `templates/rules.md` |
 | Messages are kept for 7 days and then deleted; there is no long-term Slack archive. | `daemon.py` |
 | Sending uses a separate token, sealed with your password (scrypt, AES-256-GCM) and decrypted only into daemon memory. | `seal.py`, `sending.py` |
-| Drafts need your password to be sent. Direct sends need a grant signed with a key derived from your password, an unlocked daemon, an open item of that agent (the reply goes only into that item's conversation) and the hourly limit. | `sending.py` |
+| Drafts need your password to be sent. Direct sends need a grant signed with a key derived from your password and bound to the agent's subscription, an unlocked daemon, an open item of that agent (the reply goes only into that item's conversation) and the hourly limit; sends are serialised. Password checks are serialised and back off after failures. | `sending.py` |
 | Messages Doorbell sent are recorded, so the watcher counts them as the agent's reply, not yours. | `daemon.py` |
 
 **Limit the agent in its harness.** The hard limit on what a fooled agent can do is its tool
