@@ -40,7 +40,7 @@ Agent Doorbell is a volunteer project and has no bug bounty.
   (`doorbell login --send`, or `doorbell sender add`), it is a separate token with `chat:write` (and optionally
   `reactions:write`), stored encrypted with a key derived from a password you choose (scrypt,
   AES-256-GCM). The decrypted token is kept only in the daemon's memory, from the time you
-  type the password (`login --send`, `sender add` or `unlock`) until the daemon stops or you run
+  type the password (`login --send`, `sender add`, `unlock` or `grant`) until the daemon stops or you run
   `doorbell lock`. Adding, replacing or removing the sender token, approving a draft,
   granting an agent direct sending, unlocking and changing the password all need the
   password; revoking, rejecting and locking only take power away and don't. Password checks
