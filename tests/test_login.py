@@ -987,3 +987,14 @@ def test_credentials_file_is_600_even_over_a_loose_leftover(tmp_path):
     if os.name != "nt":
         assert stat.S_IMODE(os.stat(p.parent).st_mode) == 0o700
     assert [x.name for x in p.parent.iterdir()] == ["U1.json"]
+
+
+def test_signing_in_again_revokes_the_replaced_token(make_env):
+    e = make_env()
+    cid, _, redirect = new_app(e, READ)
+    assert run_login(e, "--client-id", cid, "--redirect-uri", redirect).code == 0
+    first = json.loads((e.home / "credentials" / f"{e.me}.json").read_text())["token"]
+    assert run_login(e, "--client-id", cid, "--redirect-uri", redirect).code == 0
+    second = json.loads((e.home / "credentials" / f"{e.me}.json").read_text())["token"]
+    assert first != second and first in e.mock.revoked and second not in e.mock.revoked
+    assert ident(e)["status"] == "ok"

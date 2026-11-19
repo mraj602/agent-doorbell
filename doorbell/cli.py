@@ -383,13 +383,23 @@ def login(args):
 
     if role in (None, "watch") and not can_post:
         path = config.HOME / "credentials" / f"{creds['user_id']}.json"
+        try:
+            from .slackapi import read_creds
+            previous = read_creds(str(path)) if path.exists() else None
+        except OSError:
+            previous = None
         oauth.write_creds(str(path), creds)
         try:
             res = call("identity_add", token_file=str(path))
         except SystemExit:
-            path.unlink(missing_ok=True)
+            if previous:
+                oauth.write_creds(str(path), previous)
+            else:
+                path.unlink(missing_ok=True)
             oauth.revoke(cfg["slack_api_base"], creds)
             raise
+        if previous and previous.get("token") != creds["token"]:
+            oauth.revoke(cfg["slack_api_base"], previous)   # the sign-in it replaces
         say("Watching with a read-only token (it can't post). Doorbell renews it on its own.")
         return out(res)
     if role in (None, "watch"):

@@ -93,6 +93,7 @@ Sign in to Slack with one command instead of copying a token.
 - `identity add` can't replace an identity in single-token mode. Approving a draft whose
   sealed token had to be renewed no longer unlocks Doorbell as a side effect.
 - `doorbell login --for send|both` doesn't open a browser by itself: you open the printed link.
+- Signing in again revokes the token it replaces.
 
 ## [0.2.0] - 2026-11-19
 
