@@ -283,7 +283,9 @@ def test_listener_only_answers_its_path_and_keeps_waiting():
 def test_listener_rejects_a_state_mismatch():
     port = free_port()
     redirect = f"http://localhost:{port}/cb"
-    res, (status, body) = listen(redirect, "RIGHT", 2, lambda: get(f"{redirect}?code=abc&state=WRONG"))
+    # 127.0.0.1, not localhost: on Windows "localhost" tries ::1 first, which takes seconds to refuse
+    res, (status, body) = listen(redirect, "RIGHT", 4,
+                                 lambda: get(f"http://127.0.0.1:{port}/cb?code=abc&state=WRONG"))
     # refused with 400, and the listener keeps waiting for its own response (here: until it times out),
     # so another local process can't cancel the owner's sign-in
     assert status == 400 and "state mismatch" in body
