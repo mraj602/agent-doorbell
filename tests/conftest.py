@@ -115,6 +115,9 @@ class Env:
         name = name or f"agent-{uuid.uuid4().hex[:6]}"
         res = self.call("register", name=name, sub=sub or {}, **kw)
         self.agents.append(name)
+        # Windows before Python 3.13 has a ~16 ms clock: a message posted right away could get
+        # the very timestamp of the registration and count as older than the agent.
+        time.sleep(0.04 if os.name == "nt" else 0)
         return name
 
     def deregister_all(self):
