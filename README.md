@@ -91,7 +91,7 @@ You choose, in your agent's own permissions (see [SETUP step 6](docs/SETUP.md#6-
 | Draft | write drafts in the right DM or thread; you review and send | starting out with replies |
 | Reply | post as you, react, draft | routine questions you trust it with |
 
-Sending through Doorbell itself, with drafts you approve from the terminal, is planned for the next release.
+Or let Doorbell hold the send policy (0.2.0): give the agent only `Bash(doorbell *)`; it writes drafts you approve with `doorbell review`, and sends directly only after `doorbell grant`. See [Sending through Doorbell](docs/SETUP.md#sending-through-doorbell-optional).
 
 ## How it compares
 
