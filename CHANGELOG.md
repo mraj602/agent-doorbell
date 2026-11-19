@@ -6,6 +6,12 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `docs/COMPARISON.md`: Agent Doorbell compared with about 20 ways to put an agent on Slack
+  (OpenClaw, Claude in Slack, the Slack MCP, Cursor, Devin, Socket Mode and webhook bots,
+  n8n, Zapier and others), use cases, and when not to use it. Also on the website.
+
 ## [0.2.0] - 2026-11-19
 
 Optional sending through Doorbell, with the policy enforced by Doorbell and your password
