@@ -97,3 +97,18 @@ def test_init_agent_warns_inside_a_project_repo(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "looks like a project repo" in out
     assert (repo / "AGENTS.md").read_text() == "the project's own instructions\n"
+
+
+def test_service_command_keeps_windows_paths(monkeypatch):
+    """The daemon's path must survive as-is: backslashes and spaces (C:\\Program Files\\...)."""
+    import xml.etree.ElementTree as ET
+    from doorbell import service
+    exe = r"C:\Program Files\Py 3\python.exe"
+    monkeypatch.setattr(agentkit.shutil, "which", lambda name: None)
+    monkeypatch.setattr(agentkit.sys, "executable", exe)
+    u = service.units(None, None, None)["doorbelld"]
+    assert u["argv"] == [exe, "-m", "doorbell", "daemon"]
+    root = ET.fromstring(service.windows_task("doorbelld", u).split("\n", 1)[1])
+    ns = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+    assert root.find(".//t:Command", ns).text == exe
+    assert root.find(".//t:Arguments", ns).text == "-m doorbell daemon"

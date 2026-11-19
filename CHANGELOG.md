@@ -90,6 +90,8 @@ Sign in to Slack with one command instead of copying a token.
 - `doorbell service install` works on headless Macs (launchd `bootstrap` with a background
   session) and on reinstall, and on every OS fails loudly if the daemon doesn't start.
 - Starting a second daemon exits cleanly instead of with an error.
+- `doorbell service install` on Windows: the task's command lost the backslashes in the
+  Python path, so the daemon never started. Paths with spaces work on every OS too.
 
 ### Security
 

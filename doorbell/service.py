@@ -11,14 +11,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .agentkit import doorbell_cmd
+from .agentkit import doorbell_argv
 
 SYSTEMD_DIR = Path.home() / ".config/systemd/user"
 LAUNCHD_DIR = Path.home() / "Library/LaunchAgents"
 
 
 def units(dispatch, folder, command):
-    exe = shlex.split(doorbell_cmd())
+    exe = doorbell_argv()
     out = {"doorbelld": {"desc": "Agent Doorbell watcher (polls Slack only while agents are registered)",
                          "argv": exe + ["daemon"], "cwd": None, "after": None}}
     if dispatch:

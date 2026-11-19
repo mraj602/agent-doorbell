@@ -5,6 +5,7 @@ which tools it may use are decided by the harness that runs it (Claude Code, Cod
 this writes instructions and a subscription, never permission settings. Claude Code users get
 skills and auto-ack hooks from the agent-doorbell plugin instead of per-folder files.
 """
+import os
 import shutil
 import sys
 from importlib import resources
@@ -13,6 +14,15 @@ from pathlib import Path
 
 def template(name):
     return resources.files("doorbell.templates").joinpath(name).read_text()
+
+
+def doorbell_argv():
+    """The command that runs doorbell, as a list, so paths with spaces or backslashes survive.
+    On Windows the interpreter is used directly, so a service can run it hidden with pythonw."""
+    exe = shutil.which("doorbell")
+    if exe and os.name != "nt":
+        return [exe]
+    return [sys.executable, "-m", "doorbell"]
 
 
 def doorbell_cmd():
