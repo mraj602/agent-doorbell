@@ -68,6 +68,16 @@ def launchd_plist(label, u):
 """
 
 
+def windows_user():
+    import getpass
+    dom = os.environ.get("USERDOMAIN")
+    return f"{dom}\\{getpass.getuser()}" if dom else getpass.getuser()
+
+
+def windows_task_name(name):
+    return f"AgentDoorbell-{name}"   # in the root folder: making a task folder needs an administrator
+
+
 def windows_task(name, u):
     """A Task Scheduler task that starts at logon and restarts on failure. Runs hidden via
     pythonw when available so no console window stays open."""
@@ -79,11 +89,13 @@ def windows_task(name, u):
     exe, args = argv[0], subprocess.list2cmdline(argv[1:])
     esc = lambda t: t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     cwd = f"<WorkingDirectory>{esc(u['cwd'])}</WorkingDirectory>" if u["cwd"] else ""
+    # This user only: a logon trigger for any user, or a task folder, needs an administrator.
+    user = esc(windows_user())
     return f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>{esc(u['desc'])}</Description></RegistrationInfo>
-  <Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger></Triggers>
-  <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{user}</UserId></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>{user}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
@@ -196,7 +208,7 @@ def service_windows(action, dispatch, folder, command):
         {"doorbelld": None, **({f"doorbell-dispatch-{dispatch}": None} if dispatch else {})}
     task_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "doorbell" / "tasks"
     for name, u in us.items():
-        task = f"AgentDoorbell\\{name}"
+        task = windows_task_name(name)
         if action == "print":
             print(f"# Task Scheduler: {task}\n{windows_task(name, u)}")
             continue
@@ -205,15 +217,20 @@ def service_windows(action, dispatch, folder, command):
                 continue
             run(["schtasks", "/End", "/TN", task])
             run(["schtasks", "/Delete", "/TN", task, "/F"])
+            for old in (f"AgentDoorbell\\{name}",):   # where earlier versions put it
+                run(["schtasks", "/Delete", "/TN", old, "/F"], quiet=True)
             continue
         task_dir.mkdir(parents=True, exist_ok=True)
         xml = task_dir / f"{name}.xml"
         xml.write_text(windows_task(name, u), encoding="utf-16")
         run(["schtasks", "/End", "/TN", task])
-        run(["schtasks", "/Create", "/TN", task, "/XML", str(xml), "/F"])
+        run(["schtasks", "/Delete", "/TN", f"AgentDoorbell\\{name}", "/F"], quiet=True)   # earlier versions
+        if run(["schtasks", "/Create", "/TN", task, "/XML", str(xml), "/F"]) != 0:
+            raise SystemExit(f"error: Task Scheduler refused to create {task} (see above); run "
+                             "`doorbell daemon` in a terminal meanwhile")
         run(["schtasks", "/Run", "/TN", task])
     if action == "install":
         if not wait_for_daemon():
             raise SystemExit("error: the task was created but doorbelld didn't start within 15 s; check "
-                             "Task Scheduler (AgentDoorbell folder) or run `doorbell daemon` in a terminal")
+                             "Task Scheduler (tasks named AgentDoorbell-...) or run `doorbell daemon` in a terminal")
         print("doorbelld is running. The tasks start at every logon. Logs: `doorbell log` and `doorbell status`.")
