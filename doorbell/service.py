@@ -79,8 +79,10 @@ def windows_task_name(name):
 
 
 def windows_task(name, u):
-    """A Task Scheduler task that starts at logon and restarts on failure. Runs hidden via
-    pythonw when available so no console window stays open."""
+    """A Task Scheduler task that starts at logon and is started again within 5 minutes if it
+    stops (Task Scheduler's restart-on-failure only covers failing to start; IgnoreNew skips
+    the check while it runs). Runs hidden via pythonw when available, so no console window
+    stays open."""
     argv = list(u["argv"])
     if argv and argv[0].lower().endswith("python.exe"):
         pyw = argv[0][:-10] + "pythonw.exe"
@@ -94,7 +96,8 @@ def windows_task(name, u):
     return f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>{esc(u['desc'])}</Description></RegistrationInfo>
-  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{user}</UserId></LogonTrigger></Triggers>
+  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{user}</UserId></LogonTrigger>
+    <TimeTrigger><StartBoundary>2020-01-01T00:00:00</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT5M</Interval></Repetition></TimeTrigger></Triggers>
   <Principals><Principal id="Author"><UserId>{user}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
