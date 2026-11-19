@@ -76,7 +76,7 @@
             <a class="btn primary" href="#setup">Set up in 5 minutes</a>
             <a class="btn ghost" href="https://github.com/mraj602/agent-doorbell">View on GitHub</a>
           </p>
-          <p class="note">Works with Claude Code, Codex, Gemini CLI or any agent that can run a command. Linux, macOS and Windows (Linux is the tested platform). Unofficial, open source, MIT.</p>
+          <p class="note">Works with Claude Code, Codex, Gemini CLI or any agent that can run a command. Linux, macOS and Windows. Unofficial, open source, MIT.</p>
         </div>
         <figure class="fig hero-fig">
           <img class="shot" src="img/slack-thread.png" width="1200" height="927" alt="A Slack thread in #team-builds. Alex Doe asks whether the staging build for PR 214 is green. Doorbell woke the agent, and a draft reply sits in the thread, visible only to you, with a Send button.">
@@ -691,7 +691,7 @@ doorbell unlock            # after a reboot</code></pre>
           <details><summary>What if the daemon or my laptop was off?</summary><p>Nothing is lost. Every conversation has a cursor, so polling continues from it, as far back as Slack's history still shows. An agent that was inactive resumes from its checkpoint, at most 24 hours back by default. If a sign-in could not be renewed meanwhile, run <code>doorbell login</code>; cursors are kept. In layout B, run <code>doorbell unlock</code> first.</p></details>
           <details><summary>Live session or headless dispatch?</summary><p>Headless is recommended for anything that runs for days: each batch starts a fresh, small context. A live session is good for watching the agent work, but its cost per batch grows with the session's age. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/RUNNING.md">RUNNING.md</a>.</p></details>
           <details><summary>How many people can share one daemon?</summary><p>One person per daemon. Everyone in a workspace can use the same Slack app: each person runs <code>doorbell login</code> and gets their own token. Several agents can share one daemon.</p></details>
-          <details><summary>What are the known limits?</summary><p>Linux is the tested platform; macOS and Windows should work but are not covered by CI yet. Only messages are watched, not search, files or canvases. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ARCHITECTURE.md#14-limits-and-known-gaps">Limits and known gaps</a>.</p></details>
+          <details><summary>What are the known limits?</summary><p>One person per daemon, and replies arrive within about 30 seconds. Only messages are watched, not search, files or canvases. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ARCHITECTURE.md#14-limits-and-known-gaps">Limits and known gaps</a>.</p></details>
         </div>
       </div>
     </section>

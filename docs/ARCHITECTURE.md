@@ -490,8 +490,6 @@ happened. With Agent Doorbell the same day with three real messages costs three 
 
 ## 14. Limits and known gaps
 
-- **Linux is the tested platform.** macOS (launchd) and Windows (Task Scheduler) are
-  supported but not covered by CI or real-Slack tests yet.
 - **Sending is unlocked by hand after every restart.** The decrypted sender token is kept in
   memory only, so after a reboot granted agents draft instead of sending until you run
   `doorbell unlock`. In single-token mode (layout B) watching waits for the unlock too, then

@@ -86,6 +86,10 @@ Sign in to Slack with one command instead of copying a token.
 - `doorbell sender remove` didn't delete the sealed sender token in 0.2.0 (a code line ended
   up inside a comment). In single-token mode it now refuses: switch watching to a read-only
   token first. `sender remove` explains `doorbell logout` instead.
+- After `doorbell logout` from single-token mode, a read-only `doorbell login` works again.
+- `doorbell service install` works on headless Macs (launchd `bootstrap` with a background
+  session) and on reinstall, and on every OS fails loudly if the daemon doesn't start.
+- Starting a second daemon exits cleanly instead of with an error.
 
 ### Security
 

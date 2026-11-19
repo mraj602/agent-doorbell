@@ -161,8 +161,7 @@ The full comparison of about 20 tools, use cases and sources is in
 
 ## Status and limits
 
-Early release. Linux is the tested platform; macOS and Windows should work
-but are not covered by CI yet. One person per daemon. Replies arrive
+Runs on Linux, macOS and Windows. One person per daemon. Replies arrive
 within about 30 seconds, not instantly. See
 [Limits and known gaps](docs/ARCHITECTURE.md#14-limits-and-known-gaps).
 
