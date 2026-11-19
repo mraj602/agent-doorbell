@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Square master (apple-touch-icon, icon-512): a bell on a deep teal tile, coral clapper and ring marks. -->
+  <rect width="512" height="512" fill="#0B3B3C"/>
+  <path d="M256 96a24 24 0 0 1 24 24v6c58 14 92 62 92 124v62l40 44v24H100v-24l40-44v-62c0-62 34-110 92-124v-6a24 24 0 0 1 24-24z" fill="#F4EFE4"/>
+  <path d="M216 404h80a40 40 0 0 1-80 0z" fill="#FF8A4C"/>
+  <g fill="none" stroke="#FF8A4C" stroke-width="22" stroke-linecap="round">
+    <path d="M62 196q-22 52 0 104"/><path d="M450 196q22 52 0 104"/>
+  </g>
+</svg>

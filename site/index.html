@@ -1,146 +1,282 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Agent Doorbell for Slack: let your AI agents sleep</title>
-<meta name="description" content="Agent Doorbell watches Slack with a tiny local daemon and wakes your AI agent only when someone needs it. Zero tokens while idle.">
-<meta name="color-scheme" content="light dark">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='10' y='4' width='44' height='56' rx='12' fill='%23b45f06'/%3E%3Ccircle cx='32' cy='32' r='14' fill='%23fff3d6'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%23f0a53a'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Agent Doorbell for Slack: let your AI agents sleep</title>
+  <meta name="description" content="Agent Doorbell watches Slack with a tiny local daemon and a read-only token, and wakes your AI agent (Claude Code, Codex, Gemini CLI or your own) only when a message needs it. Zero tokens while quiet.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="canonical" href="https://mraj602.github.io/agent-doorbell/">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon-180.png">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Agent Doorbell for Slack">
+  <meta property="og:title" content="Agent Doorbell for Slack: let your AI agents sleep">
+  <meta property="og:description" content="A local daemon watches Slack read-only and wakes your AI agent only when someone needs it. Zero tokens while quiet. Open source, MIT.">
+  <meta property="og:url" content="https://mraj602.github.io/agent-doorbell/">
+  <meta property="og:image" content="https://mraj602.github.io/agent-doorbell/img/social-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A bell icon and the words: Agent Doorbell for Slack. Let your AI agents sleep. Wake them only when needed.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Agent Doorbell for Slack: let your AI agents sleep">
+  <meta name="twitter:description" content="A local daemon watches Slack read-only and wakes your AI agent only when someone needs it. Zero tokens while quiet.">
+  <meta name="twitter:image" content="https://mraj602.github.io/agent-doorbell/img/social-card.png">
+  <meta name="twitter:image:alt" content="A bell icon and the words: Agent Doorbell for Slack. Let your AI agents sleep. Wake them only when needed.">
+  <link rel="preload" href="fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script src="site.js" defer></script>
 </head>
 <body>
-<header class="hero">
-<div class="wrap">
-<svg class="logo" viewBox="0 0 64 64" role="img" aria-label="Agent Doorbell logo: a doorbell button on a brass plate"><rect x="10" y="4" width="44" height="56" rx="12" fill="#b45f06"/><rect x="14" y="8" width="36" height="48" rx="9" fill="none" stroke="#f0a53a" stroke-width="2"/><circle cx="32" cy="32" r="14" fill="#fff3d6"/><circle cx="32" cy="32" r="8" fill="#f0a53a"/><path d="M52 10q5 4 4 11M56 6q7 6 6 16" fill="none" stroke="#f0a53a" stroke-width="2.5" stroke-linecap="round"/></svg>
-<h1>Agent Doorbell for Slack</h1>
-<p class="tag">Let your AI agents sleep. Agent Doorbell watches Slack and wakes them only when someone needs them.</p>
-<div class="btns">
-<a class="btn p" href="https://github.com/mraj602/agent-doorbell">GitHub</a>
-<a class="btn s" href="https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md">Setup guide</a>
-</div>
-</div>
-</header>
-<main class="wrap">
+  <a class="skip" href="#main">Skip to content</a>
 
-<section aria-labelledby="problem">
-<h2 id="problem">The problem</h2>
-<p>An AI agent that "watches Slack" usually does it by checking: every few minutes it spends a model turn to find out that nothing happened. Agent Doorbell moves the watching into a tiny local daemon with no LLM. It polls Slack with a read-only token, queues the messages meant for you, and rings the agent (Claude Code, Codex, Gemini CLI or your own) only when there is something to handle.</p>
-<div class="two">
-<div class="card"><h3>Agent checks on a timer</h3><p>Every check is a full model turn: it re-reads the conversation context and the Slack tool output even when nothing is new. Most checks find nothing, and you pay for all of them.</p></div>
-<div class="card"><h3>Agent Doorbell</h3><p>A deterministic watcher that costs nothing to run decides <em>whether</em> there is work. The agent only runs when there is. <strong>Zero tokens while nobody is calling.</strong></p></div>
-</div>
-<figure>
-<svg viewBox="0 0 720 155" role="img" aria-labelledby="dt dd" font-family="system-ui,sans-serif" font-size="14">
-<title id="dt">How Agent Doorbell works</title>
-<desc id="dd">Slack is polled read-only by the doorbell daemon, which fills a per-agent queue. The queue rings your agent. Your agent waits at no cost, handles the batch, and hooks or observed replies ack each item.</desc>
-<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
-<g fill="none" stroke="currentColor" stroke-width="2" color="#8a7a66">
-<rect x="10" y="30" width="120" height="50" rx="10" fill="#f0e6d4" stroke="#8a7a66"/>
-<rect x="200" y="30" width="130" height="50" rx="10" fill="#f0a53a" stroke="#b45f06"/>
-<rect x="400" y="30" width="130" height="50" rx="10" fill="#f0e6d4" stroke="#8a7a66"/>
-<rect x="590" y="30" width="120" height="50" rx="10" fill="#f0e6d4" stroke="#8a7a66"/>
-<path d="M130 55H196" marker-end="url(#a)"/><path d="M330 55H396" marker-end="url(#a)"/><path d="M530 55H586" marker-end="url(#a)"/>
-<path d="M650 82V140H265V86" stroke-dasharray="5 4" marker-end="url(#a)"/>
-</g>
-<g fill="#2a2118" text-anchor="middle" font-weight="600">
-<text x="70" y="60">Slack</text><text x="265" y="60">doorbelld</text><text x="465" y="60">Agent queue</text><text x="650" y="60">Your agent</text></g>
-<g fill="currentColor" color="#8a7a66" text-anchor="middle" font-size="12.5" style="fill:#8a7a66">
-<text x="165" y="20">read-only polls</text><text x="365" y="20">routes</text><text x="560" y="20">rings</text>
-<text x="450" y="132">acks: hooks and observed replies; unfinished items come back</text>
-<text x="10" y="102" text-anchor="start">none when no agent listens</text></g>
-</svg>
-<figcaption>Your agent blocks on <code>doorbell wait</code>, which costs nothing, until the daemon rings.</figcaption>
-</figure>
-<p class="note">Illustration from the docs: checking every 5 minutes is 288 turns a day. If each turn carries a modest 20k-token context, that is about 5.8M input tokens a day (cheaper with prompt caching, but never zero) to learn, most of the time, that nothing happened. With Agent Doorbell the same day with three real messages costs three short runs.</p>
-</section>
+  <header class="top">
+    <div class="wrap bar">
+      <a class="brand" href="#top" aria-label="Agent Doorbell, top of page">
+        <img src="favicon.svg" alt="" width="28" height="28">
+        <span>Agent Doorbell</span>
+      </a>
+      <nav aria-label="Page">
+        <a href="#how">How it works</a>
+        <a href="#setup">Setup</a>
+        <a href="#plugin">Claude Code</a>
+        <a href="#levels">Levels</a>
+        <a href="#privacy">Security</a>
+        <a href="#faq">FAQ</a>
+        <a href="https://github.com/mraj602/agent-doorbell">GitHub</a>
+      </nav>
+    </div>
+  </header>
 
-<section aria-labelledby="features">
-<h2 id="features">Why Agent Doorbell</h2>
-<div class="grid">
-<div class="card"><h3>Zero tokens while idle</h3><p>The agent runs only when a message needs it. With no agents registered, the daemon makes no Slack calls at all.</p></div>
-<div class="card"><h3>Your agent, with your context</h3><p>Replies come from your own agent, with your repos, tools and instructions, not from a generic bot.</p></div>
-<div class="card"><h3>Read-only, harness-neutral</h3><p>Doorbell never posts and never touches your agent's settings. Whether the agent replies, drafts or only triages is set in your agent's own permissions: for Claude Code, one command-line flag.</p></div>
-<div class="card"><h3>Nothing gets lost</h3><p>Items are leased and acked. A crashed or rate-limited agent gets them back. A laptop that was asleep catches up from where it stopped.</p></div>
-<div class="card"><h3>No server, webhook or public URL</h3><p>It runs on your laptop or dev box, on Slack's free plan.</p></div>
-<div class="card"><h3>Any agent, any OS</h3><p>Linux, macOS and Windows. Agents register themselves and use three commands: <code>wait</code>, <code>inbox --claim</code> and <code>ack</code>. Claude Code gets a plugin with a guided <code>/agent-doorbell:setup</code>, handle and listen skills, and hooks that ack automatically.</p></div>
-</div>
-</section>
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="wrap grid">
+        <div>
+          <p class="eyebrow">Unofficial, local, MIT, v0.1.0</p>
+          <h1>Let your AI agents sleep.</h1>
+          <p class="lead">Agent Doorbell watches Slack with a tiny local daemon and wakes your agent only when someone needs it. No LLM and no tokens while it is quiet.</p>
+          <div class="code">
+            <pre><code id="cmd-hero">pipx install agent-doorbell</code></pre>
+            <button type="button" class="copy" data-copy="cmd-hero" aria-label="Copy install command">Copy</button>
+          </div>
+          <p class="cta">
+            <a class="btn primary" href="#setup">5-minute setup</a>
+            <a class="btn" href="https://github.com/mraj602/agent-doorbell">View on GitHub</a>
+          </p>
+          <p class="note">Linux, macOS and Windows (Linux is the tested platform). Works with Claude Code, Codex, Gemini CLI or any agent that can run a command.</p>
+        </div>
+        <figure class="fig">
+          <img class="shot" src="img/slack-thread.png" width="1800" height="723" alt="Mockup of a Slack thread in #team-builds. Alex Doe asks whether the staging build for PR 214 is green. Doorbell woke the agent, and a draft reply sits in the thread, visible only to you, with a Send button.">
+          <figcaption>Mockup with made-up names. The agent wrote the draft; you review and send.</figcaption>
+        </figure>
+      </div>
+    </section>
 
-<section aria-labelledby="modes">
-<h2 id="modes">What the agent may do</h2>
-<p>You choose, in your agent's own permissions.</p>
-<div class="tw"><table>
-<thead><tr><th scope="col">Level</th><th scope="col">The agent can</th><th scope="col">Good for</th></tr></thead>
-<tbody>
-<tr><th scope="row">Triage</th><td>post nothing; sort items into escalated (with a summary) or ignored</td><td>a filter and a digest</td></tr>
-<tr><th scope="row">Draft</th><td>write drafts in the right DM or thread; you review and send</td><td>starting out with replies</td></tr>
-<tr><th scope="row">Reply</th><td>post as you, react, draft</td><td>routine questions you trust it with</td></tr>
-</tbody></table></div>
-<p class="note">Sending through Doorbell itself, with drafts you approve from the terminal, is planned for the next release.</p>
-</section>
+    <section id="problem" aria-labelledby="problem-h">
+      <div class="wrap">
+        <h2 id="problem-h">Why it exists</h2>
+        <p class="sub">An agent that "watches Slack" usually does it by checking: every few minutes it spends a model turn to find out that nothing happened. Doorbell moves the watching out of the model.</p>
+        <ul class="cards">
+          <li>
+            <h3>No token waste</h3>
+            <p>The agent runs only when a message needs it. With no agents registered, the daemon makes no Slack calls at all (state DORMANT).</p>
+          </li>
+          <li>
+            <h3>Your agent, your context</h3>
+            <p>Replies come from your own agent, with your repos, tools and instructions, not from a generic bot.</p>
+          </li>
+          <li>
+            <h3>Nothing is lost</h3>
+            <p>Queued items are leased and redelivered if the agent dies. A laptop that was asleep catches up from where it stopped.</p>
+          </li>
+          <li>
+            <h3>No server</h3>
+            <p>No webhook, no public URL. It runs on your laptop or dev box, on Slack's free plan.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
 
-<section aria-labelledby="compare">
-<h2 id="compare">How it compares</h2>
-<div class="tw"><table>
-<thead><tr><th scope="col"></th><th scope="col" class="hl">Agent Doorbell</th><th scope="col">Agent checks Slack on a timer</th><th scope="col">Hosted bot + LLM API</th></tr></thead>
-<tbody>
-<tr><th scope="row">Tokens while idle</th><td class="hl"><strong>zero</strong></td><td>a model turn per check, all day</td><td>zero</td></tr>
-<tr><th scope="row">Replies as</th><td class="hl">you, or drafts for you</td><td>you</td><td>a bot</td></tr>
-<tr><th scope="row">Your repos and tools</th><td class="hl">yes</td><td>yes</td><td>no</td></tr>
-<tr><th scope="row">Infrastructure</th><td class="hl">a local daemon</td><td>none</td><td>server, public URL or socket, API key</td></tr>
-<tr><th scope="row">Catches up after downtime</th><td class="hl">yes</td><td>no</td><td>depends</td></tr>
-</tbody></table></div>
-<p>Why polling and not Slack's Events API or webhooks? Polling needs no public URL or always-on socket, and it can catch up after downtime, which events can't. Latency is the trade-off: replies arrive within about 30 seconds, not instantly. See the <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ARCHITECTURE.md#12-why-polling-comparison-with-slack-events-and-webhooks">full comparison</a>.</p>
-</section>
+    <section id="how" aria-labelledby="how-h">
+      <div class="wrap">
+        <h2 id="how-h">How it works</h2>
+        <figure class="fig">
+          <img class="flow shot" src="img/flow.png" width="2200" height="661" loading="lazy" alt="Flow diagram: Slack is polled read-only by doorbelld, a small local daemon with no LLM. It puts matching messages in a per-agent queue and rings the agent. The agent, such as Claude Code, Codex or Gemini CLI, handles the batch and acks each item. With no agent listening the daemon is DORMANT and makes zero Slack API calls.">
+        </figure>
+        <ol class="plain">
+          <li><strong>Watch.</strong> <code>doorbelld</code> polls Slack with a read-only user token. Each agent's <code>sub.yaml</code> says whose messages count; the daemon polls the union of what live agents want.</li>
+          <li><strong>Queue.</strong> Matching messages go to a per-agent queue. <code>inbox --claim</code> leases items for 15 minutes; an expired lease redelivers the item, and after 3 attempts it becomes stuck and you get a notification.</li>
+          <li><strong>Wake.</strong> Agents run headless through <code>doorbell dispatch</code>, which starts a short run per batch, or live through <code>doorbell wait</code>, which blocks at no cost until there is work.</li>
+          <li><strong>Resolve.</strong> The agent acks each item (replied, drafted, reacted, ignored or escalated). Hooks and observed replies ack for it, and unfinished items come back.</li>
+        </ol>
+        <figure class="fig">
+          <img class="shot" src="img/doorbell-status.png" width="2240" height="1819" loading="lazy" alt="Terminal output of doorbell status twice. First with no agents: state DORMANT, zero API calls, empty poll set. Then with two agents registered: state POLLING, a poll set of three conversations, agent main with pending items, and agent oncall active with one waiter.">
+          <figcaption>Real <code>doorbell status</code> output from the daemon running against a mock Slack. Some fields are trimmed, and the DORMANT run shows a settled daemon.</figcaption>
+        </figure>
+      </div>
+    </section>
 
-<section aria-labelledby="start">
-<h2 id="start">Quick start</h2>
-<div class="codebox">
-<pre><code id="qs">pipx install agent-doorbell              # or: uv tool install agent-doorbell
-
-# 1. Create your own read-only Slack app from slack-app-manifest.yaml and save its xoxp- token
-mkdir -p ~/.config/doorbell
-( umask 077; read -rsp 'Slack user token: ' t; echo; printf '%s\n' "$t" > ~/.config/doorbell/slack-token )
-
-# 2. Start the watcher and add the token
-doorbell service install
-doorbell identity add --token-file ~/.config/doorbell/slack-token
-
-# 3. Create an agent folder, then edit its AGENTS.md (instructions) and sub.yaml (who to listen to)
-doorbell init-agent ~/doorbell-agents/main --owner "Your Name"
-claude plugin marketplace add mraj602/agent-doorbell   # Claude Code: skills and auto-ack hooks
-claude plugin install agent-doorbell@agent-doorbell
-
-# 4. Run it headless: one short agent run per batch. The agent registers itself.
-#    Your agent's own flags decide what it may do; this one may only write drafts.
-doorbell service install --dispatch main --dir ~/doorbell-agents/main -- \
+    <section id="setup" aria-labelledby="setup-h">
+      <div class="wrap">
+        <h2 id="setup-h">5-minute setup</h2>
+        <p class="sub">The short version. The <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md">full guide</a> has a check after every step and is written so an AI agent can follow it for you. You need Python 3.10 or newer and a Slack workspace where you may create an app.</p>
+        <ol class="steps">
+          <li>
+            <h3>Install</h3>
+            <div class="code">
+              <pre><code id="cmd-install">pipx install agent-doorbell
+# or: uv tool install agent-doorbell</code></pre>
+              <button type="button" class="copy" data-copy="cmd-install" aria-label="Copy install commands">Copy</button>
+            </div>
+          </li>
+          <li>
+            <h3>Create your own read-only Slack app and save its token</h3>
+            <p>At <a href="https://api.slack.com/apps">api.slack.com/apps</a> choose Create New App, From a manifest, and paste <a href="https://github.com/mraj602/agent-doorbell/blob/main/slack-app-manifest.yaml"><code>slack-app-manifest.yaml</code></a>. Install it and copy the <code>xoxp-</code> token. Save it to a file only you can read (Linux and macOS; the guide has the Windows lines):</p>
+            <div class="code">
+              <pre><code id="cmd-token">mkdir -p ~/.config/doorbell
+( umask 077; read -rsp 'Slack user token: ' t; echo; printf '%s\n' "$t" &gt; ~/.config/doorbell/slack-token )</code></pre>
+              <button type="button" class="copy" data-copy="cmd-token" aria-label="Copy token-saving command">Copy</button>
+            </div>
+          </li>
+          <li>
+            <h3>Start the watcher and add the token</h3>
+            <div class="code">
+              <pre><code id="cmd-start">doorbell service install
+doorbell identity add --token-file ~/.config/doorbell/slack-token</code></pre>
+              <button type="button" class="copy" data-copy="cmd-start" aria-label="Copy watcher commands">Copy</button>
+            </div>
+            <p class="small">Check: <code>doorbell status</code> shows <code>"state": "DORMANT"</code>. Dormant means no agents yet, so zero Slack API calls.</p>
+          </li>
+          <li>
+            <h3>Create an agent folder</h3>
+            <div class="code">
+              <pre><code id="cmd-agent">doorbell init-agent ~/doorbell-agents/main --owner "Your Name"</code></pre>
+              <button type="button" class="copy" data-copy="cmd-agent" aria-label="Copy init-agent command">Copy</button>
+            </div>
+            <p class="small">It writes <code>AGENTS.md</code> (instructions and the queue commands), <code>sub.yaml</code> (who to listen to) and <code>.doorbell-agent</code>, plus a one-line <code>CLAUDE.md</code> that points Claude Code at the same instructions. Edit the first two, then pick a permission level below.</p>
+          </li>
+          <li>
+            <h3>Run the agent</h3>
+            <p>Headless, one short run per batch, with a draft-only Claude Code agent as the example:</p>
+            <div class="code">
+              <pre><code id="cmd-run">doorbell service install --dispatch main --dir ~/doorbell-agents/main -- \
     claude -p "/agent-doorbell:handle" --model sonnet --allowedTools "Bash(doorbell *)" \
     "mcp__plugin_slack_slack__slack_send_message_draft" \
     --disallowedTools "mcp__plugin_slack_slack__slack_send_message" "mcp__plugin_slack_slack__slack_schedule_message"</code></pre>
-<button id="copy" type="button" hidden aria-label="Copy quick start commands">Copy</button>
-</div>
-<p>The full walkthrough, with a check after every step, is in the <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md">Setup guide</a>. It is written so an AI agent can follow it for you too.</p>
-<p>Status: version 0.1.0, early, read-only. Linux is the tested platform; macOS and Windows should work but are not covered by CI yet. One person per daemon. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ARCHITECTURE.md#14-limits-and-known-gaps">limits and known gaps</a>.</p>
-</section>
-</main>
-<footer>
-<div class="wrap">
-<p class="note"><strong>Unofficial.</strong> Agent Doorbell is an independent project. It is not affiliated with, endorsed by or connected to Slack Technologies, Salesforce, Anthropic or OpenAI. "Slack", "Claude" and other names are trademarks of their owners, used only to describe compatibility.</p>
-<nav aria-label="Project links">
-<a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ARCHITECTURE.md">Architecture</a>
-<a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md">Setup</a>
-<a href="https://github.com/mraj602/agent-doorbell/blob/main/SECURITY.md">Security</a>
-<a href="https://github.com/mraj602/agent-doorbell">GitHub</a>
-<a href="https://pypi.org/project/agent-doorbell/">PyPI</a>
-</nav>
-<p>Released under the <a href="https://github.com/mraj602/agent-doorbell/blob/main/LICENSE">MIT license</a>.</p>
-</div>
-</footer>
-<script>
-(function(){var b=document.getElementById('copy'),c=document.getElementById('qs');
-if(!b||!c||!navigator.clipboard)return;b.hidden=false;
-b.addEventListener('click',function(){navigator.clipboard.writeText(c.textContent).then(function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1800)})})})();
-</script>
+              <button type="button" class="copy" data-copy="cmd-run" aria-label="Copy dispatch command">Copy</button>
+            </div>
+            <p class="small">Or a live session: <code>cd ~/doorbell-agents/main &amp;&amp; claude "/agent-doorbell:listen"</code>. Then <code>doorbell status</code> shows your agent as <code>active</code> and the state as <code>POLLING</code>.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="plugin" aria-labelledby="plugin-h">
+      <div class="wrap">
+        <h2 id="plugin-h">Claude Code plugin</h2>
+        <p class="sub">Install it once per machine, then let Claude Code walk you through the setup.</p>
+        <div class="code">
+          <pre><code id="cmd-plugin">/plugin marketplace add mraj602/agent-doorbell
+/plugin install agent-doorbell@agent-doorbell
+/agent-doorbell:setup</code></pre>
+          <button type="button" class="copy" data-copy="cmd-plugin" aria-label="Copy plugin commands">Copy</button>
+        </div>
+        <div class="two mt">
+          <div>
+            <div class="tscroll"><table class="tbl">
+              <thead><tr><th scope="col">Part</th><th scope="col">What it does</th></tr></thead>
+              <tbody>
+                <tr><td><code>/agent-doorbell:setup</code></td><td>The setup guide as a skill, with a check after each step.</td></tr>
+                <tr><td><code>/agent-doorbell:handle</code></td><td>Claim the queue once, handle every item, stop. For headless runs.</td></tr>
+                <tr><td><code>/agent-doorbell:listen</code></td><td>Live mode: wait in the background, handle messages as they arrive.</td></tr>
+                <tr><td><code>/agent-doorbell:status</code></td><td>A plain-language status.</td></tr>
+                <tr><td>Hooks</td><td>Ack an item when the agent replies, drafts or reacts in Slack, and stop a turn from ending with claimed items unresolved. Active only in agent folders (with <code>.doorbell-agent</code>).</td></tr>
+              </tbody>
+            </table></div>
+            <p class="small mt">The plugin grants no permissions and never changes your Claude Code settings.</p>
+          </div>
+          <figure class="fig">
+            <img class="shot" src="img/claude-code-setup.png" width="1960" height="1259" loading="lazy" alt="Mockup of a Claude Code terminal running /agent-doorbell:setup. It checks the doorbell command and version 0.1.0, tells you to create the Slack app and save the token in your own terminal, confirms the watcher is DORMANT, notes the agent folder files, and asks you to choose what the agent may do.">
+            <figcaption>Illustrative mockup of the guided setup; wording is shortened.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="agents" aria-labelledby="agents-h">
+      <div class="wrap">
+        <h2 id="agents-h">Other agents</h2>
+        <p class="sub">Doorbell is harness-neutral. An agent needs a non-interactive mode and three commands: <code>wait</code>, <code>inbox --claim</code> and <code>ack</code>. <code>AGENTS.md</code> already teaches it the protocol.</p>
+        <div class="code">
+          <pre><code id="cmd-codex">doorbell service install --dispatch main --dir ~/doorbell-agents/main -- \
+    codex exec "Follow AGENTS.md: handle the doorbell queue once, then stop."</code></pre>
+          <button type="button" class="copy" data-copy="cmd-codex" aria-label="Copy Codex dispatch command">Copy</button>
+        </div>
+        <p>Gemini CLI (<code>gemini -p</code>) or your own script work the same way. One daemon serves any number of agents: each has its own folder, <code>sub.yaml</code>, queue, permission level and runner, and each conversation is polled once however many agents want it. Outside Claude Code you get the lease and redelivery, the stuck notification and the agent's own explicit acks; the auto-ack hooks are part of the Claude Code plugin.</p>
+      </div>
+    </section>
+
+    <section id="levels" aria-labelledby="levels-h">
+      <div class="wrap">
+        <h2 id="levels-h">What the agent may do</h2>
+        <p class="sub">Three levels, set by your agent's own harness permissions, not by Doorbell. For Claude Code headless runs the <code>--allowedTools</code> and <code>--disallowedTools</code> flags are the limit; Codex and Gemini CLI have their own controls. Start with triage or draft.</p>
+        <div class="tscroll"><table class="tbl">
+          <thead><tr><th scope="col">Level</th><th scope="col">The agent can</th><th scope="col">Worst case if it is fooled</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Triage</th><td>Run <code>doorbell</code> commands only. It sorts items into escalated (with a summary) or ignored.</td><td>A wrong summary or a wrongly ignored item.</td></tr>
+            <tr><th scope="row">Draft</th><td>Also write Slack drafts in the right DM or thread. You review and send.</td><td>A bad draft that you do not send.</td></tr>
+            <tr><th scope="row">Reply</th><td>Also post and react as you.</td><td>A harmful post as you, within what the agent can read.</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small mt">Doorbell itself never posts in 0.1.0. Sending through Doorbell with owner approval is coming in 0.2.0.</p>
+      </div>
+    </section>
+
+    <section id="privacy" aria-labelledby="privacy-h">
+      <div class="wrap">
+        <h2 id="privacy-h">Security and privacy</h2>
+        <ul class="plain">
+          <li><strong>Read-only.</strong> The daemon never posts and never calls an LLM. The Slack app you create has read scopes only, and <code>identity add</code> rejects tokens missing scopes and warns about extra ones.</li>
+          <li><strong>Local only.</strong> The daemon listens on 127.0.0.1 and every request carries a random access key from a mode-600 file, so other users on the machine cannot use it. There is no cloud service and no public URL.</li>
+          <li><strong>The token stays in a file only you can read.</strong> <code>identity add</code> refuses group- or world-readable files on Linux and macOS. The setup skill never asks for it in chat.</li>
+          <li><strong>It never writes your harness settings.</strong> Doorbell does not touch your agent's permission rules or grant Slack write access. Those stay yours.</li>
+          <li><strong>Short memory.</strong> Messages are kept for 7 days, then deleted. Subscription changes an agent makes are audited and pop a notification, and an agent can only claim and ack its own items.</li>
+          <li><strong>Prompt injection is the main risk.</strong> The instructions tell the agent to treat message text as data and to escalate anything that commits you. That helps but is not a guarantee, which is why the hard limit is the agent's tool permissions.</li>
+        </ul>
+        <p><a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ARCHITECTURE.md#9-security-model">Read the full security model</a></p>
+      </div>
+    </section>
+
+    <section id="faq" aria-labelledby="faq-h">
+      <div class="wrap faq">
+        <h2 id="faq-h">FAQ</h2>
+        <details><summary>Does it cost tokens when nothing is happening?</summary><p>No. The watcher is a plain Python daemon with no LLM. With no agents listening it makes no Slack API calls at all. A live <code>doorbell wait</code> session blocks on a background command, and headless dispatch has no agent process until there is work.</p></details>
+        <details><summary>Why polling and not Slack events or webhooks?</summary><p>Polling needs no public URL or always-on socket, and it can catch up after downtime, which events cannot. The cost is latency: replies arrive within about 30 seconds, not instantly. The architecture doc has the full comparison.</p></details>
+        <details><summary>Does it need a paid Slack plan or admin rights?</summary><p>Free plans work. Some workspaces require an admin to approve new apps; if yours does, the install step asks for approval.</p></details>
+        <details><summary>Can it send messages for me?</summary><p>Not in 0.1.0. Doorbell only reads. Replies and drafts come from your agent's own Slack tool, within the permissions you gave it. Sending through Doorbell with owner approval is planned for 0.2.0.</p></details>
+        <details><summary>Live session or headless dispatch?</summary><p>Headless is recommended for anything that runs for days: each batch starts a fresh, small context. A live session is good for watching the agent work, but its cost per batch grows with the session's age. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/RUNNING.md">RUNNING.md</a>.</p></details>
+        <details><summary>How many people can share one daemon?</summary><p>One person per daemon, with their own Slack app and token. Several agents can share it.</p></details>
+        <details><summary>What are the known limits?</summary><p>Linux is the tested platform; macOS and Windows should work but are not covered by CI yet. Only messages are watched, not search, files or canvases. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ARCHITECTURE.md#14-limits-and-known-gaps">Limits and known gaps</a>.</p></details>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p class="disclaimer"><strong>Unofficial.</strong> Agent Doorbell is an independent project, not affiliated with, endorsed by or connected to Slack Technologies, Salesforce, Anthropic or OpenAI. Slack, Claude and other names are trademarks of their owners, used only to describe compatibility.</p>
+      <ul class="links">
+        <li><a href="https://github.com/mraj602/agent-doorbell">GitHub</a></li>
+        <li><a href="https://pypi.org/project/agent-doorbell/">PyPI</a></li>
+        <li><a href="https://github.com/mraj602/agent-doorbell/tree/main/docs">Docs</a></li>
+        <li><a href="https://github.com/mraj602/agent-doorbell/blob/main/CHANGELOG.md">Changelog</a></li>
+        <li><a href="https://github.com/mraj602/agent-doorbell/blob/main/SECURITY.md">Security</a></li>
+        <li><a href="https://github.com/mraj602/agent-doorbell/blob/main/LICENSE">MIT</a></li>
+        <li><a href="llms.txt">llms.txt</a></li>
+      </ul>
+      <p class="small">Fonts: IBM Plex, SIL OFL 1.1 (<a href="fonts/OFL.txt">licence</a>). This page sets no cookies and uses no trackers or external requests.</p>
+    </div>
+  </footer>
 </body>
 </html>

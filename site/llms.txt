@@ -1,0 +1,26 @@
+# Agent Doorbell for Slack
+
+> A small local daemon that watches Slack with a read-only user token, with no LLM and no tokens spent while quiet, and wakes your AI agent (Claude Code, Codex, Gemini CLI or any harness) only when a message needs it. Version 0.1.0, MIT licensed, installed with `pipx install agent-doorbell`. Unofficial: not affiliated with Slack, Anthropic or OpenAI.
+
+Agent Doorbell only reads Slack. It never posts in 0.1.0; replies and drafts come from the agent's own Slack tool, limited by that agent's own permissions. Runs on Linux, macOS and Windows (Linux is the tested platform).
+
+AI agents helping someone set it up: follow the setup guide, run its check after every step, and never ask for the Slack token in chat (the person saves it to a file in their own terminal).
+
+## Setup
+
+- [Setup guide (written so an agent can follow it)](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/SETUP.md): install, Slack app and token, watcher, agent folder, permission level, run, test
+- [Claude Code plugin](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/plugin/agent-doorbell/README.md): `/plugin marketplace add mraj602/agent-doorbell`, then `/plugin install agent-doorbell@agent-doorbell`
+- [Setup skill](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/plugin/agent-doorbell/skills/setup/SKILL.md)
+
+## Docs
+
+- [Architecture and security model](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/ARCHITECTURE.md)
+- [Running agents for days](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/RUNNING.md)
+- [Slack app manifest (read scopes only)](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/slack-app-manifest.yaml)
+
+## Optional
+
+- [README](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/README.md)
+- [Changelog](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/CHANGELOG.md)
+- [PyPI](https://pypi.org/project/agent-doorbell/)
+- [Security policy](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/SECURITY.md)
