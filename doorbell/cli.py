@@ -71,17 +71,28 @@ HOOK_OUTCOMES = {
 }
 
 
+def folder_agent(ev):
+    """The agent whose folder the session runs in, or None outside an agent folder."""
+    f = Path(ev.get("cwd") or ".") / ".doorbell-agent"
+    return f.read_text().strip() if f.exists() else None
+
+
 def hook_post_tool_use():
-    """After the agent posts, drafts or reacts in Slack, ack the matching queue items at once."""
+    """After the agent posts, drafts or reacts in Slack, ack the matching queue items at once.
+    Only in an agent folder, and only that agent's items: a Slack reply from any other session
+    leaves the queue alone."""
     ev = json.load(sys.stdin)
+    name = folder_agent(ev)
+    if not name:
+        return
     tool, inp = ev.get("tool_name", ""), ev.get("tool_input") or {}
     short = tool.rsplit("__", 1)[-1]
     try:
         if short in HOOK_OUTCOMES:
-            call("ack", by="thread", channel=inp.get("channel_id"), thread_ts=inp.get("thread_ts"),
+            call("ack", name=name, by="thread", channel=inp.get("channel_id"), thread_ts=inp.get("thread_ts"),
                  outcome=HOOK_OUTCOMES[short], note=f"hook: {short}")
         elif short == "slack_add_reaction":
-            call("ack", channel=inp.get("channel_id"), message_ts=inp.get("message_ts"),
+            call("ack", name=name, channel=inp.get("channel_id"), message_ts=inp.get("message_ts"),
                  outcome="reacted", note=f"hook: reaction {inp.get('emoji')}")
     except (DaemonDown, SystemExit):
         pass   # never break the agent's turn because of doorbell
@@ -90,11 +101,11 @@ def hook_post_tool_use():
 def hook_stop():
     """Block the agent from ending its turn while it holds claimed-but-unresolved items."""
     ev = json.load(sys.stdin)
-    f = Path(ev.get("cwd") or ".") / ".doorbell-agent"
-    if not f.exists() or ev.get("stop_hook_active"):
+    name = folder_agent(ev)
+    if not name or ev.get("stop_hook_active"):
         return
     try:
-        items = call("unresolved", name=f.read_text().strip())["items"]
+        items = call("unresolved", name=name)["items"]
     except (DaemonDown, SystemExit):
         return
     if items:
@@ -122,8 +133,6 @@ def build_parser():
     ini = sp.add_parser("init-agent", help="create an agent folder (instructions and subscription)")
     ini.add_argument("dir")
     ini.add_argument("--name", help="agent name (default: the folder name)")
-    ini.add_argument("--claude-code", action="store_true",
-                     help="also add Claude Code slash commands and auto-ack hooks (no permission rules)")
     ini.add_argument("--owner", help="your name, used in the instructions (default: 'the owner')")
     ini.add_argument("--force", action="store_true", help="overwrite generated files")
 
@@ -209,8 +218,7 @@ def run(args):
         return hook_post_tool_use() if args.which == "post-tool-use" else hook_stop()
     if c == "init-agent":
         from .agentkit import init_agent
-        return init_agent(args.dir, name=args.name, owner=args.owner, claude_code=args.claude_code,
-                          force=args.force)
+        return init_agent(args.dir, name=args.name, owner=args.owner, force=args.force)
     if c == "dispatch":
         from .runner import dispatch
         return dispatch(agent_name_in(args.dir, args), strip_dashes(args.command), args.dir,

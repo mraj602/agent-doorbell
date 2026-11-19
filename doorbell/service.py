@@ -24,7 +24,7 @@ def units(dispatch, folder, command):
     if dispatch:
         if not command:
             raise SystemExit("error: --dispatch needs the agent command after --, e.g. "
-                             "-- claude -p /doorbell-handle")
+                             "-- claude -p \"/agent-doorbell:handle\"")
         if not folder:
             raise SystemExit("error: --dispatch needs --dir <agent folder>")
         folder = str(Path(folder).expanduser().resolve())

@@ -1,6 +1,7 @@
 """`doorbell init-agent`: pure file generation, tested in-process."""
 import json
 import re
+from pathlib import Path
 
 from doorbell import agentkit, cli
 
@@ -23,29 +24,32 @@ def test_default_folder_is_harness_neutral(tmp_path):
     assert not (folder / ".claude").exists()      # no harness settings unless asked for
 
 
-def test_claude_code_extras_are_hooks_and_commands_only(tmp_path):
-    folder = init(tmp_path, claude_code=True)
-    settings = json.loads((folder / ".claude/settings.json").read_text())
-    assert set(settings) == {"hooks"}             # never permission rules
-    assert (folder / ".claude/commands/doorbell-listen.md").exists()
-    assert (folder / ".claude/commands/doorbell-handle.md").exists()
-    hooks = settings["hooks"]
+def test_plugin_hooks_cover_every_hook_outcome_and_skip_reads():
+    root = Path(__file__).resolve().parent.parent
+    hooks = json.loads((root / "plugin/agent-doorbell/hooks/hooks.json").read_text())["hooks"]
     post = hooks["PostToolUse"][0]
-    assert post["hooks"][0]["command"].endswith("hook post-tool-use")
-    assert hooks["Stop"][0]["hooks"][0]["command"].endswith("hook stop")
     matcher = re.compile(post["matcher"])
-    for tool in ("mcp__plugin_slack_slack__slack_send_message", "mcp__plugin_slack_slack__slack_send_message_draft",
-                 "mcp__claude_ai_Slack__slack_schedule_message", "mcp__plugin_slack_slack__slack_add_reaction"):
-        assert matcher.fullmatch(tool), tool
+    for prefix in ("mcp__plugin_slack_slack__", "mcp__claude_ai_Slack__", "mcp__slack__"):
+        for short in list(cli.HOOK_OUTCOMES) + ["slack_add_reaction"]:
+            assert matcher.fullmatch(prefix + short), prefix + short
     assert not matcher.fullmatch("mcp__plugin_slack_slack__slack_read_thread")
+    for entry in (post, hooks["Stop"][0]):
+        cmd = entry["hooks"][0]["command"]
+        assert cmd.startswith("command -v doorbell") and cmd.endswith("|| true")   # harmless if not installed
 
 
-def test_every_hook_outcome_tool_is_covered_by_the_matcher(tmp_path):
-    folder = init(tmp_path, claude_code=True)
-    matcher = re.compile(json.loads((folder / ".claude/settings.json").read_text())
-                         ["hooks"]["PostToolUse"][0]["matcher"])
-    for short in list(cli.HOOK_OUTCOMES) + ["slack_add_reaction"]:
-        assert matcher.fullmatch("mcp__plugin_slack_slack__" + short), short
+def test_plugin_manifests_agree_on_name_and_version():
+    from doorbell import __version__
+    root = Path(__file__).resolve().parent.parent
+    market = json.loads((root / ".claude-plugin/marketplace.json").read_text())
+    plugin = json.loads((root / "plugin/agent-doorbell/.claude-plugin/plugin.json").read_text())
+    entry = market["plugins"][0]
+    assert entry["name"] == plugin["name"] == "agent-doorbell"
+    assert (root / entry["source"]).resolve() == (root / "plugin/agent-doorbell").resolve()
+    assert plugin["version"] == __version__
+    for skill in ("setup", "handle", "listen", "status"):
+        text = (root / f"plugin/agent-doorbell/skills/{skill}/SKILL.md").read_text()
+        assert text.startswith(f"---\nname: {skill}\ndescription: "), skill
 
 
 def test_existing_files_are_kept_unless_forced(tmp_path, capsys):
@@ -59,10 +63,9 @@ def test_existing_files_are_kept_unless_forced(tmp_path, capsys):
 
 
 def test_init_agent_cli_names_after_folder(tmp_path):
-    cli.main(["init-agent", str(tmp_path / "folder-name"), "--claude-code", "--name", "custom"])
+    cli.main(["init-agent", str(tmp_path / "folder-name"), "--name", "custom"])
     folder = tmp_path / "folder-name"
     assert (folder / ".doorbell-agent").read_text() == "custom\n"
-    assert (folder / ".claude/settings.json").exists()
     cli.main(["init-agent", str(tmp_path / "other")])
     assert (tmp_path / "other/.doorbell-agent").read_text() == "other\n"
 

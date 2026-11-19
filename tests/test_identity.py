@@ -113,3 +113,20 @@ def test_second_daemon_refuses_to_start(env):
     r = _sp.run([_sys.executable, "-m", "doorbell", "daemon"], env=env.env, capture_output=True, text=True,
                 timeout=30)
     assert r.returncode != 0 and "already running" in r.stderr
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="SIGTERM is POSIX")
+def test_sigterm_removes_the_endpoint_file(env, tmp_path):
+    import subprocess as _sp
+    import sys as _sys
+    from conftest import until
+    home = tmp_path / "state"
+    e = {**env.env, "DOORBELL_HOME": str(home), "DOORBELL_ENDPOINT": str(home / "endpoint.json")}
+    p = _sp.Popen([_sys.executable, "-m", "doorbell", "daemon"], env=e, stdout=_sp.DEVNULL, stderr=_sp.PIPE)
+    try:
+        until(lambda: (home / "endpoint.json").exists(), what="endpoint written")
+        p.terminate()
+        assert p.wait(15) == 0
+        assert not (home / "endpoint.json").exists()
+    finally:
+        p.kill()

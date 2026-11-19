@@ -3,7 +3,9 @@
 - Python 3.10+, standard library plus PyYAML only. Don't add dependencies.
 - Package `doorbell/`: `daemon.py` (polling, routing, lifecycle), `server.py` (ops over local TCP),
   `cli.py` (client + Claude Code hooks), `agentkit.py` + `templates/` (init-agent), `runner.py`
-  (dispatch), `service.py` (systemd/launchd/Task Scheduler). Design: `docs/ARCHITECTURE.md`.
+  (dispatch), `service.py` (systemd/launchd/Task Scheduler). The Claude Code plugin is in
+  `plugin/agent-doorbell/` (skills, hooks) with the marketplace in `.claude-plugin/`; keep its
+  version equal to `doorbell.__version__`. Design: `docs/ARCHITECTURE.md`.
 - Tests: `pip install -e '.[test]' && pytest`. They run a real daemon against the mock Slack in
   `tests/mock_slack.py`; no Slack account needed. `tests/e2e_slack.py` hits real Slack and is
   opt-in.

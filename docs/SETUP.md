@@ -4,8 +4,16 @@ This guide takes you from nothing to an agent that handles your Slack messages. 
 15 minutes on Linux, macOS or Windows. Every step ends with a **check**, so you, or an AI agent
 doing the setup for you, can confirm it worked before moving on.
 
-> **Setting this up with an AI agent?** Point it at this file and say "follow docs/SETUP.md".
-> There is a section for agents at the end: [Notes for AI agents doing the setup](#notes-for-ai-agents-doing-the-setup).
+> **Using Claude Code?** Install the plugin and let it walk you through everything below:
+>
+> ```
+> /plugin marketplace add mraj602/agent-doorbell
+> /plugin install agent-doorbell@agent-doorbell
+> /agent-doorbell:setup
+> ```
+>
+> **Another AI agent?** Point it at this file and say "follow docs/SETUP.md". There is a
+> section for agents at the end: [Notes for AI agents doing the setup](#notes-for-ai-agents-doing-the-setup).
 
 **Who does what.** You do the steps that need you: creating the Slack app and token, starting
 the watcher, and deciding what the agent may do. The agent does its own part: it registers
@@ -49,7 +57,7 @@ pipx install agent-doorbell
 # or, before the first PyPI release: pipx install git+https://github.com/mraj602/agent-doorbell
 ```
 
-**Check:** `doorbell --version` prints `doorbell 0.0.1` or newer.
+**Check:** `doorbell --version` prints `doorbell 0.1.0` or newer.
 
 ## 2. Create your Slack app and token
 
@@ -115,7 +123,6 @@ Then run `doorbell doctor`: your identity shows `"token": "ok"` and `"missing_sc
 
 ```bash
 doorbell init-agent ~/doorbell-agents/main --owner "Your Name"
-# Claude Code users: add --claude-code for slash commands and auto-ack hooks
 ```
 
 It writes:
@@ -126,11 +133,26 @@ It writes:
 | `sub.yaml` | Whose messages and which channels the agent listens to. |
 | `AGENTS.md` | The agent's instructions: what to answer, ignore or leave for you, and the queue commands. Codex, Gemini CLI and most other agents read it. |
 | `CLAUDE.md` | One line, `@AGENTS.md`, so Claude Code reads the same instructions. |
-| `.claude/settings.json` | With `--claude-code` only: two hooks. One acks an item when the agent replies, drafts or reacts in Slack; one stops the agent from ending its turn with claimed items unresolved. **No permission rules.** |
-| `.claude/commands/doorbell-handle.md` | With `--claude-code` only: `/doorbell-handle`, handle one batch, then stop (headless). |
-| `.claude/commands/doorbell-listen.md` | With `--claude-code` only: `/doorbell-listen`, loop forever (live session). |
-
 Doorbell never writes your agent's permission settings. Those stay yours (step 6).
+
+**Claude Code: install the plugin** (once per machine, not per folder):
+
+```
+/plugin marketplace add mraj602/agent-doorbell
+/plugin install agent-doorbell@agent-doorbell
+```
+
+From a shell: `claude plugin marketplace add mraj602/agent-doorbell` and
+`claude plugin install agent-doorbell@agent-doorbell`. It adds:
+
+| Part | What it does |
+|---|---|
+| `/agent-doorbell:handle` | Claim the queue once, handle every item, stop. For headless runs. |
+| `/agent-doorbell:listen` | Live mode: wait in the background, handle messages as they arrive. |
+| `/agent-doorbell:setup`, `/agent-doorbell:status` | This guide as a skill; a plain-language status. |
+| Hooks | Ack an item when the agent replies, drafts or reacts in Slack, and stop it from ending a turn with claimed items unresolved. Active only in agent folders (with `.doorbell-agent`). |
+
+The plugin grants no permissions either.
 
 **Check:** `ls -a ~/doorbell-agents/main` lists the files above.
 
@@ -191,12 +213,12 @@ first time it runs. A dispatcher also registers it if needed. Pick one way to ru
 Headless is recommended for anything that runs for days; see [RUNNING.md](RUNNING.md) for why.
 
 **A. Headless with Claude Code (recommended).** A service waits for work and starts a fresh,
-short `claude -p` run for each batch. Needs `--claude-code` from step 5. Add the flags for
-your level from step 6:
+short `claude -p` run for each batch. Needs the plugin from step 5. Add the flags for your
+level from step 6:
 
 ```bash
 doorbell service install --dispatch main --dir ~/doorbell-agents/main -- \
-    claude -p --model sonnet /doorbell-handle --allowedTools "Bash(doorbell *)" \
+    claude -p "/agent-doorbell:handle" --model sonnet --allowedTools "Bash(doorbell *)" \
     "mcp__plugin_slack_slack__slack_send_message_draft" \
     --disallowedTools "mcp__plugin_slack_slack__slack_send_message" "mcp__plugin_slack_slack__slack_schedule_message"
 ```
@@ -211,7 +233,7 @@ doorbell service install --dispatch main --dir ~/doorbell-agents/main -- \
 **C. Live Claude Code session** (good for watching it work; stops on reboot):
 
 ```bash
-cd ~/doorbell-agents/main && claude /doorbell-listen
+cd ~/doorbell-agents/main && claude "/agent-doorbell:listen"
 ```
 
 Approve its `doorbell` commands when asked, or allow `Bash(doorbell *)` in your settings.

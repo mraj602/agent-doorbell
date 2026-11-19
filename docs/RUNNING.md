@@ -9,7 +9,7 @@ change quickly; check the linked pages for your version.
 
 ## Claude Code: a long-lived background session
 
-The live mode (`claude /doorbell-listen`, optionally in the background) keeps one session running. While it waits,
+The live mode (`claude "/agent-doorbell:listen"`, optionally in the background) keeps one session running. While it waits,
 it runs `doorbell wait` as a background command and spends nothing.
 
 | Question | Answer | Source |
@@ -31,7 +31,7 @@ must watch for reboots, usage-limit stops and a growing context.
 the agent runs only per batch:
 
 ```
-doorbell wait  (blocks, no tokens)  ──▶  claude -p /doorbell-handle  (fresh, short)  ──▶  exits  ──▶  wait again
+doorbell wait  (blocks, no tokens)  ──▶  claude -p "/agent-doorbell:handle"  (fresh, short)  ──▶  exits  ──▶  wait again
 ```
 
 - **No context growth:** each run starts small and costs about the same.
@@ -49,8 +49,8 @@ knowledge in `AGENTS.md` or notes the agent can read.
 
 ### Cost control for headless runs
 
-- Pick a model per agent: `claude -p --model sonnet /doorbell-handle --allowedTools ...`.
-- With API billing, cap each run: `claude -p --max-budget-usd 0.50 /doorbell-handle`.
+- Pick a model per agent: `claude -p "/agent-doorbell:handle" --model sonnet --allowedTools ...`.
+- With API billing, cap each run: `claude -p "/agent-doorbell:handle" --max-budget-usd 0.50 ...`.
 - `claude -p` waits at most 10 minutes for background work it started (raise with
   `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`). Handling a batch shouldn't need background work.
 

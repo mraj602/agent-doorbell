@@ -2,10 +2,9 @@
 
 Doorbell only listens. How the agent replies (its own Slack tool, drafts, or not at all) and
 which tools it may use are decided by the harness that runs it (Claude Code, Codex, ...), so
-this writes instructions and a subscription, never permission settings. `--claude-code` adds
-optional conveniences for Claude Code: slash commands and hooks that ack items automatically.
+this writes instructions and a subscription, never permission settings. Claude Code users get
+skills and auto-ack hooks from the agent-doorbell plugin instead of per-folder files.
 """
-import json
 import shutil
 import sys
 from importlib import resources
@@ -22,21 +21,6 @@ def doorbell_cmd():
     return exe or f"{sys.executable} -m doorbell"
 
 
-def claude_hooks():
-    """Hooks only: they ack items after the agent posts, and stop it from ending a turn with
-    claimed items unresolved. No permission rules: those belong to your Claude Code setup."""
-    exe = doorbell_cmd()
-    return {
-        "hooks": {
-            "PostToolUse": [{
-                "matcher": ".*slack_send_message.*|.*slack_schedule_message|.*slack_add_reaction",
-                "hooks": [{"type": "command", "command": f"{exe} hook post-tool-use", "timeout": 15}],
-            }],
-            "Stop": [{"hooks": [{"type": "command", "command": f"{exe} hook stop", "timeout": 15}]}],
-        },
-    }
-
-
 def write(path, text, force, made):
     if path.exists() and not force:
         print(f"  keep   {path} (exists; --force to overwrite)")
@@ -47,7 +31,7 @@ def write(path, text, force, made):
     print(f"  wrote  {path}")
 
 
-def init_agent(folder, name=None, owner=None, claude_code=False, force=False):
+def init_agent(folder, name=None, owner=None, force=False):
     root = Path(folder).expanduser().resolve()
     name = name or root.name
     owner = owner or "the owner"
@@ -58,10 +42,6 @@ def init_agent(folder, name=None, owner=None, claude_code=False, force=False):
     write(root / "sub.yaml", template("sub.yaml"), force, made)
     write(root / "AGENTS.md", agents_md, force, made)
     write(root / "CLAUDE.md", "@AGENTS.md\n", force, made)   # Claude Code reads CLAUDE.md; this imports AGENTS.md
-    if claude_code:
-        write(root / ".claude/settings.json", json.dumps(claude_hooks(), indent=2) + "\n", force, made)
-        write(root / ".claude/commands/doorbell-handle.md", template("handle.md"), force, made)
-        write(root / ".claude/commands/doorbell-listen.md", template("listen.md"), force, made)
     print(NEXT.format(dir=root))
     return made
 
@@ -75,4 +55,5 @@ Next:
   3. Start the agent in {dir}. It registers itself (`doorbell register`) and starts listening.
      Headless, one short run per batch of messages:
        doorbell service install --dispatch <name> --dir {dir} -- <agent command>
+     Claude Code: install the agent-doorbell plugin and use claude -p "/agent-doorbell:handle".
      See docs/SETUP.md, step 7, for Claude Code, Codex and Gemini CLI examples."""

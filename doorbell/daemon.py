@@ -10,6 +10,7 @@ No live agents => DORMANT: zero Slack API calls.
 import asyncio
 import json
 import os
+import signal
 import secrets
 import shutil
 import subprocess
@@ -617,9 +618,16 @@ def already_running():
         return False
 
 
+def _exit_on_sigterm(signum, frame):
+    raise SystemExit(0)
+
+
 def main():
     if already_running():
         raise SystemExit(f"error: doorbelld is already running ({config.ENDPOINT})")
+    # Service managers stop the daemon with SIGTERM; turn it into a normal exit so the endpoint
+    # file is removed and clients don't try a stale port.
+    signal.signal(signal.SIGTERM, _exit_on_sigterm)
     try:
         asyncio.run(Daemon().serve())
     finally:

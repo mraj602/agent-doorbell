@@ -4,7 +4,7 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.1] - unreleased
+## [0.1.0] - unreleased
 
 The first public version. Read-only: Agent Doorbell watches Slack and wakes agents, and
 never posts. Everything below is new.
@@ -21,8 +21,12 @@ never posts. Everything below is new.
   delivered when it returns.
 - `doorbell init-agent`, which writes a harness-neutral agent folder: `AGENTS.md`
   (instructions and the queue protocol), `sub.yaml` and a `CLAUDE.md` pointer. It never writes
-  permission settings. `--claude-code` adds slash commands and hooks that ack items
-  automatically.
+  permission settings.
+- A Claude Code plugin, installed from this repository's marketplace: `/agent-doorbell:setup`
+  walks a new user through setup with a check per step; `/agent-doorbell:handle` and
+  `/agent-doorbell:listen` handle the queue headless or live; `/agent-doorbell:status`
+  explains what the watcher is doing. Its hooks ack items after a Slack reply, draft or
+  reaction, and act only in agent folders.
 - Agents register themselves (`doorbell register`) on their first run.
 - `doorbell dispatch`, a headless runner that wakes any agent CLI, and registers the agent if
   it hasn't yet.

@@ -63,7 +63,7 @@
 <div class="card"><h3>Read-only, harness-neutral</h3><p>Doorbell never posts and never touches your agent's settings. Whether the agent replies, drafts or only triages is set in your agent's own permissions: for Claude Code, one command-line flag.</p></div>
 <div class="card"><h3>Nothing gets lost</h3><p>Items are leased and acked. A crashed or rate-limited agent gets them back. A laptop that was asleep catches up from where it stopped.</p></div>
 <div class="card"><h3>No server, webhook or public URL</h3><p>It runs on your laptop or dev box, on Slack's free plan.</p></div>
-<div class="card"><h3>Any agent, any OS</h3><p>Linux, macOS and Windows. Agents register themselves and use three commands: <code>wait</code>, <code>inbox --claim</code> and <code>ack</code>. Claude Code also gets optional hooks that ack automatically.</p></div>
+<div class="card"><h3>Any agent, any OS</h3><p>Linux, macOS and Windows. Agents register themselves and use three commands: <code>wait</code>, <code>inbox --claim</code> and <code>ack</code>. Claude Code gets a plugin with a guided <code>/agent-doorbell:setup</code>, handle and listen skills, and hooks that ack automatically.</p></div>
 </div>
 </section>
 
@@ -108,18 +108,20 @@ doorbell service install
 doorbell identity add --token-file ~/.config/doorbell/slack-token
 
 # 3. Create an agent folder, then edit its AGENTS.md (instructions) and sub.yaml (who to listen to)
-doorbell init-agent ~/doorbell-agents/main --claude-code --owner "Your Name"
+doorbell init-agent ~/doorbell-agents/main --owner "Your Name"
+claude plugin marketplace add mraj602/agent-doorbell   # Claude Code: skills and auto-ack hooks
+claude plugin install agent-doorbell@agent-doorbell
 
 # 4. Run it headless: one short agent run per batch. The agent registers itself.
 #    Your agent's own flags decide what it may do; this one may only write drafts.
 doorbell service install --dispatch main --dir ~/doorbell-agents/main -- \
-    claude -p --model sonnet /doorbell-handle --allowedTools "Bash(doorbell *)" \
+    claude -p "/agent-doorbell:handle" --model sonnet --allowedTools "Bash(doorbell *)" \
     "mcp__plugin_slack_slack__slack_send_message_draft" \
     --disallowedTools "mcp__plugin_slack_slack__slack_send_message" "mcp__plugin_slack_slack__slack_schedule_message"</code></pre>
 <button id="copy" type="button" hidden aria-label="Copy quick start commands">Copy</button>
 </div>
 <p>The full walkthrough, with a check after every step, is in the <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md">Setup guide</a>. It is written so an AI agent can follow it for you too.</p>
-<p>Status: version 0.0.1, early, read-only. Linux is the tested platform; macOS and Windows should work but are not covered by CI yet. One person per daemon. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ARCHITECTURE.md#14-limits-and-known-gaps">limits and known gaps</a>.</p>
+<p>Status: version 0.1.0, early, read-only. Linux is the tested platform; macOS and Windows should work but are not covered by CI yet. One person per daemon. See <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ARCHITECTURE.md#14-limits-and-known-gaps">limits and known gaps</a>.</p>
 </section>
 </main>
 <footer>

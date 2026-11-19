@@ -52,7 +52,7 @@ def ensure_registered(name, folder):
 def dispatch(name, command, folder, timeout, once=False):
     if not command:
         raise SystemExit("error: give the command to run after --, e.g. "
-                         "doorbell dispatch -- claude -p /doorbell-handle")
+                         'doorbell dispatch -- claude -p "/agent-doorbell:handle"')
     folder = os.path.abspath(folder)
     env = dict(os.environ, DOORBELL_AGENT=name)
     failures = 0

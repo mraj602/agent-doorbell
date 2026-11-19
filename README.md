@@ -39,13 +39,14 @@ your agent ◀── doorbell wait (blocks, costs nothing) ───────
 - **No server, no webhook, no public URL.** It runs on your laptop or dev box, on Slack's free
   plan.
 - **Any agent, any OS.** Linux, macOS and Windows. Agents register themselves and use three
-  commands: `wait`, `inbox --claim` and `ack`. Claude Code also gets optional slash commands
-  and hooks that ack automatically.
+  commands: `wait`, `inbox --claim` and `ack`. Claude Code gets a plugin with a guided
+  `/agent-doorbell:setup`, handle and listen skills, and hooks that ack automatically.
 
 ## Quick start
 
 ```bash
 pipx install agent-doorbell              # or: uv tool install agent-doorbell
+# not on PyPI yet? pipx install git+https://github.com/mraj602/agent-doorbell
 
 # 1. Create your own read-only Slack app from slack-app-manifest.yaml and save its xoxp- token
 mkdir -p ~/.config/doorbell
@@ -56,12 +57,14 @@ doorbell service install
 doorbell identity add --token-file ~/.config/doorbell/slack-token
 
 # 3. Create an agent folder, then edit its AGENTS.md (instructions) and sub.yaml (who to listen to)
-doorbell init-agent ~/doorbell-agents/main --claude-code --owner "Your Name"
+doorbell init-agent ~/doorbell-agents/main --owner "Your Name"
+claude plugin marketplace add mraj602/agent-doorbell   # Claude Code: skills and auto-ack hooks
+claude plugin install agent-doorbell@agent-doorbell
 
 # 4. Run it headless: one short agent run per batch. The agent registers itself.
 #    Your agent's own flags decide what it may do; this one may only write drafts.
 doorbell service install --dispatch main --dir ~/doorbell-agents/main -- \
-    claude -p --model sonnet /doorbell-handle --allowedTools "Bash(doorbell *)" \
+    claude -p "/agent-doorbell:handle" --model sonnet --allowedTools "Bash(doorbell *)" \
     "mcp__plugin_slack_slack__slack_send_message_draft" \
     --disallowedTools "mcp__plugin_slack_slack__slack_send_message" "mcp__plugin_slack_slack__slack_schedule_message"
 ```
@@ -105,7 +108,7 @@ pros and cons, and the security model are in **[docs/ARCHITECTURE.md](docs/ARCHI
 
 ## Status and limits
 
-Version 0.0.1: early, read-only. Linux is the tested platform; macOS and Windows should work
+Version 0.1.0: early, read-only. Linux is the tested platform; macOS and Windows should work
 but are not covered by CI yet. One person per daemon. Replies arrive
 within about 30 seconds, not instantly. See
 [Limits and known gaps](docs/ARCHITECTURE.md#14-limits-and-known-gaps).
