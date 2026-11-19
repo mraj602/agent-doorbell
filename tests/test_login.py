@@ -34,9 +34,18 @@ PROMPT = "Open this link to sign in: "
 
 # ---------- helpers ----------
 def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    """A free port below the OS's ephemeral range, like the real default 8765: an ephemeral port
+    can be the local end of another live connection, which made connects time out on macOS."""
+    import random
+    for _ in range(200):
+        port = random.randint(20000, 32000)
+        with socket.socket() as s:
+            try:
+                s.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
+    raise RuntimeError("no free port")
 
 
 def err(fn, *a, **kw):
@@ -58,10 +67,25 @@ def qs(url):
     return {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(url).query).items()}
 
 
+def loopback(url):
+    """Browsers reach localhost on whichever loopback answers; urllib tries each address the hosts
+    file lists for localhost in turn (macOS CI images list fe80::1%lo0, which hangs), so go
+    straight to 127.0.0.1 like a browser ends up doing."""
+    return url.replace("://localhost:", "://127.0.0.1:")
+
+
+class LoopbackRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return super().redirect_request(req, fp, code, msg, headers, loopback(newurl))
+
+
+BROWSER = urllib.request.build_opener(LoopbackRedirects)
+
+
 def get(url):
     """The browser following a link. Returns (status, body); HTTP errors are returned, not raised."""
     try:
-        with urllib.request.urlopen(url, timeout=10) as r:
+        with BROWSER.open(loopback(url), timeout=10) as r:
             return r.status, r.read().decode()
     except urllib.error.HTTPError as ex:
         return ex.code, ex.read().decode()
@@ -290,6 +314,32 @@ def test_listener_rejects_a_state_mismatch():
     # so another local process can't cancel the owner's sign-in
     assert status == 400 and "state mismatch" in body
     assert "code" not in res and "timed out" in str(res["error"]).lower()
+
+
+def test_a_silent_connection_does_not_block_the_listener():
+    port = free_port()
+    redirect = f"http://localhost:{port}/cb"
+    idle = []
+
+    def then():
+        idle.append(socket.create_connection(("127.0.0.1", port)))   # connects, never sends
+        return get(f"http://127.0.0.1:{port}/cb?code=abc&state=S")
+    res, (status, _) = listen(redirect, "S", 10, then)
+    idle[0].close()
+    assert status == 200 and res["code"] == "abc"
+
+
+def test_listener_answers_on_ipv6_loopback_for_localhost():
+    if not socket.has_ipv6:
+        pytest.skip("no IPv6")
+    try:
+        socket.create_server(("::1", 0), family=socket.AF_INET6).close()
+    except OSError:
+        pytest.skip("no IPv6 loopback")
+    port = free_port()
+    res, (status, _) = listen(f"http://localhost:{port}/cb", "S", 10,
+                              lambda: get(f"http://[::1]:{port}/cb?code=abc&state=S"))
+    assert status == 200 and res["code"] == "abc"
 
 
 def test_listener_reports_access_denied():

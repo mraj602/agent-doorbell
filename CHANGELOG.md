@@ -90,6 +90,10 @@ Sign in to Slack with one command instead of copying a token.
 - `doorbell service install` works on headless Macs (launchd `bootstrap` with a background
   session) and on reinstall, and on every OS fails loudly if the daemon doesn't start.
 - Starting a second daemon exits cleanly instead of with an error.
+- `doorbell service install` on Windows: the task's command lost the backslashes in the
+  Python path, so the daemon never started. Paths with spaces work on every OS too. The task
+  is now `AgentDoorbell-doorbelld`, for the current user only, so installing needs no
+  administrator, and it starts the daemon again within 5 minutes if it stops.
 
 ### Security
 
@@ -107,6 +111,9 @@ Sign in to Slack with one command instead of copying a token.
   sealed token had to be renewed no longer unlocks Doorbell as a side effect.
 - `doorbell login --for send|both` doesn't open a browser by itself: you open the printed link.
 - Signing in again revokes the token it replaces.
+- The login listener answers each connection in its own thread with a 10-second limit, so a
+  connection that never sends anything can't hold up the sign-in or its timeout. For a
+  `localhost` redirect it also listens on `::1`, for browsers that try IPv6 first.
 
 ## [0.2.0] - 2026-11-19
 

@@ -71,7 +71,7 @@ doorbell service install
 ```
 
 This installs and starts `doorbelld` as a per-user service that starts at login: a systemd
-user unit on Linux, a launchd agent on macOS, a Task Scheduler task (`AgentDoorbell\doorbelld`)
+user unit on Linux, a launchd agent on macOS, a Task Scheduler task (`AgentDoorbell-doorbelld`)
 on Windows. On Linux, also run `loginctl enable-linger $USER` if it should keep running while
 you are logged out. Without a service manager, run `doorbell daemon` under your own supervisor
 (tmux, supervisord, a container).
@@ -647,7 +647,7 @@ send_footer: ""                 # appended to messages Doorbell sends, e.g. " _(
 
 | Symptom | Cause and fix |
 |---|---|
-| `doorbelld is not running` | Linux: `systemctl --user status doorbelld`. macOS: `~/Library/Logs/dev.agent-doorbell.doorbelld.log`. Windows: `schtasks /Query /TN AgentDoorbell\doorbelld`. Start it with `doorbell service install`, or run `doorbell daemon` in a terminal to see errors. |
+| `doorbelld is not running` | Linux: `systemctl --user status doorbelld`. macOS: `~/Library/Logs/dev.agent-doorbell.doorbelld.log`. Windows: `schtasks /Query /TN AgentDoorbell-doorbelld`. Start it with `doorbell service install`, or run `doorbell daemon` in a terminal to see errors. |
 | `doorbelld is already running` | Only one daemon per state folder. Use the running one. |
 | `bad or missing access key` | The CLI and the daemon use different state folders. Check `DOORBELL_HOME`. |
 | `identity add`: `missing scopes` | The app's user scopes are incomplete. Re-check the manifest, reinstall the app, and sign in again (or copy the new token, if you use a manual token). |

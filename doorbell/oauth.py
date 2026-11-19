@@ -15,6 +15,8 @@ import http.server
 import json
 import os
 import secrets
+import socket
+import socketserver
 import threading
 import time
 import urllib.error
@@ -74,6 +76,8 @@ def wait_for_code(redirect_uri, state, timeout=300):
     done = threading.Event()
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        timeout = 10   # a connection that never sends a request can't hold the listener
+
         def log_message(self, *a):
             pass
 
@@ -112,19 +116,37 @@ def wait_for_code(redirect_uri, state, timeout=300):
             self.wfile.write(raw)
             done.set()
 
+    class Server(http.server.ThreadingHTTPServer):
+        daemon_threads = True
+
+        def server_bind(self):
+            # HTTPServer.server_bind looks up the host's name (getfqdn) before listening; with slow
+            # DNS that holds every connection for many seconds. The name is never used here.
+            socketserver.TCPServer.server_bind(self)
+            self.server_name, self.server_port = "localhost", self.server_address[1]
+
+    class Server6(Server):
+        address_family = socket.AF_INET6
+
     try:
-        srv = http.server.HTTPServer(("127.0.0.1", u.port or 80), Handler)
+        servers = [Server(("127.0.0.1", u.port or 80), Handler)]
     except OSError as e:
         raise LoginError(f"can't listen on port {u.port}: {e}. Free the port, or register another localhost "
                          f"redirect URL on the app and pass it with --redirect-uri") from None
-    t = threading.Thread(target=srv.serve_forever, daemon=True)
-    t.start()
+    if u.hostname == "localhost":   # browsers may try ::1 first for localhost
+        try:
+            servers.append(Server6(("::1", u.port or 80), Handler))
+        except OSError:
+            pass   # no IPv6 loopback, or the port is taken there: 127.0.0.1 is enough
+    for srv in servers:
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
         if not done.wait(timeout):
             raise LoginError(f"timed out: no sign-in within {int(timeout)} seconds")
     finally:
-        srv.shutdown()
-        srv.server_close()
+        for srv in servers:
+            srv.shutdown()
+            srv.server_close()
     if "error" in result:
         raise LoginError(result["error"])
     return result["code"]
