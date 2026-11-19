@@ -64,7 +64,7 @@
     <section class="hero" id="top" aria-labelledby="hero-h">
       <div class="wrap hero-grid">
         <div class="hero-copy">
-          <p class="news"><a href="#sending"><span class="ver">0.2.0</span> New: agents can send through Doorbell, with your approval</a></p>
+          <p class="news"><a href="#setup"><span class="ver">0.3.0</span> New: sign in with one command, no token to copy</a></p>
           <h1 id="hero-h">Let your AI agents sleep.</h1>
           <p class="lead">Agent Doorbell watches Slack with a tiny local daemon and wakes your agent only when someone needs it. No LLM and no tokens while it is quiet.</p>
           <div class="code code-hero">
@@ -238,13 +238,13 @@
           </li>
           <li>
             <h3>Sign in to Slack</h3>
-            <p>You need the Client ID of a Doorbell Slack app in your workspace. It is not a secret, and there is no client secret. Ask whoever set the app up, or <a href="#layouts">create it</a> yourself. Run the command, open the link and click Allow. The token is never shown or pasted.</p>
+            <p>You need the Client ID of a Doorbell Slack app in your workspace. It is not a secret, and there is no client secret. Ask whoever set the app up, or <a href="#layouts">create it</a> yourself. Run the command, open the link and click Allow. The token is never shown or pasted. Doorbell asks for read scopes only and decides from what the token can do: a read-only token goes in a file and watches unattended; a token that can post is sealed with your password instead.</p>
             <div class="code">
               <pre><code id="cmd-login">doorbell login --client-id &lt;Client ID&gt;</code></pre>
               <button type="button" class="copy" data-copy="cmd-login" aria-label="Copy login command">Copy</button>
             </div>
             <p class="check"><strong>Check:</strong> <code>doorbell doctor</code> shows <code>"token": "ok"</code> and <code>"missing_scopes": []</code>.</p>
-            <p class="fine">On a server or over SSH, add <code>--no-browser</code> and open the link through <code>ssh -L 8765:localhost:8765 user@box</code>.</p>
+            <p class="fine">On a server or over SSH, open the printed link on your laptop and click Allow. The browser ends on a <code>localhost:8765/doorbell/callback?code=...</code> page that will not load: copy that whole address and paste it into the waiting <code>doorbell login</code>. Or use <code>ssh -L 8765:localhost:8765 user@box</code>. To sign out, run <code>doorbell logout</code>.</p>
           </li>
           <li>
             <h3>Create an agent folder</h3>
@@ -269,15 +269,16 @@
           </li>
         </ol>
         <div class="layouts" id="layouts">
-          <h3>Three ways to set up the Slack app</h3>
-          <p class="sub">A workspace admin creates the app once from a manifest and shares its Client ID. Turning on PKCE (the manifests do it) makes the app a public client, and only Slack support can undo that. A token that can post is never stored in a plain file. <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ORG-SETUP.md">Setup for admins</a></p>
-          <div class="tscroll" role="region" aria-label="App layouts" tabindex="0">
+          <h3>The Slack app and the three layouts</h3>
+          <p class="sub">A workspace admin sets the app up once, from a manifest or any existing internal app, and shares its Client ID. Turning on PKCE (the manifests do it) makes the app a public client, and only Slack support can undo that. Slack adds up the scopes one person approved for one app across all their tokens, so a read-only sign-in can still return a token that can post. Approvals are per person: on one app that allows write scopes, one member can be in layout A and another in B. A token that can post is never stored in a plain file. <a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/ORG-SETUP.md">Setup for admins</a></p>
+          <div class="tscroll" role="region" aria-label="Layouts" tabindex="0">
             <table class="tbl compare">
-              <caption class="vh">The three Slack app layouts for Agent Doorbell</caption>
-              <thead><tr><td></td><th scope="col">A. One read-only app</th><th scope="col">B. One read+write app</th><th scope="col">C. Two apps</th></tr></thead>
+              <caption class="vh">The three layouts of Agent Doorbell</caption>
+              <thead><tr><td></td><th scope="col">A. Watch only</th><th scope="col">B. One sealed token</th><th scope="col">C. Two apps</th></tr></thead>
               <tbody>
-                <tr><th scope="row">Manifest</th><td><code>slack-app-manifest.yaml</code></td><td><code>slack-app-manifest-readwrite.yaml</code></td><td>A, plus <code>slack-app-manifest-sender.yaml</code></td></tr>
-                <tr><th scope="row">Login</th><td><code>doorbell login</code></td><td><code>doorbell login --for both</code></td><td><code>doorbell login</code>, then <code>doorbell login --for send</code></td></tr>
+                <tr><th scope="row">Apps</th><td>1</td><td>1</td><td>2 different ones</td></tr>
+                <tr><th scope="row">How you get there</th><td><code>doorbell login</code></td><td><code>doorbell login --send</code> (same app)</td><td><code>doorbell login</code>, then <code>doorbell login --send --client-id &lt;write app&gt;</code></td></tr>
+                <tr><th scope="row">Watching token</th><td>Read-only, in a file</td><td>The one sealed token</td><td>Read-only, in a file</td></tr>
                 <tr><th scope="row">Agents send through Doorbell</th><td>No</td><td>Yes</td><td>Yes</td></tr>
                 <tr><th scope="row">After a reboot</th><td>Watching resumes</td><td>Locked until <code>doorbell unlock</code>; nothing is missed</td><td>Watching resumes; sending needs <code>unlock</code></td></tr>
               </tbody>
@@ -369,13 +370,14 @@
         <ol class="relay">
           <li>
             <h3><span class="who">You, once</span> Sign in for sending</h3>
-            <p>With a write app (layout C, <code>slack-app-manifest-sender.yaml</code>), in your own terminal. With one read+write app (layout B), use <code>doorbell login --for both</code> instead:</p>
+            <p>In your own terminal. With the app you watch with, this gives layout B: one sealed token that watches and sends. With a second, write app (<code>slack-app-manifest-sender.yaml</code>), it gives layout C:</p>
             <div class="code">
               <pre><code id="cmd-send-add"># asks you for a new sending password
-doorbell login --for send --client-id &lt;write app's Client ID&gt;</code></pre>
-              <button type="button" class="copy" data-copy="cmd-send-add" aria-label="Copy sender add command">Copy</button>
+doorbell login --send                          # same app: layout B
+doorbell login --send --client-id &lt;write app's Client ID&gt;   # second app: layout C</code></pre>
+              <button type="button" class="copy" data-copy="cmd-send-add" aria-label="Copy sending login command">Copy</button>
             </div>
-            <p class="fine">The token is sealed with your password and never written to a file. The older <code>doorbell sender add --token-file</code> still works.</p>
+            <p class="fine">The token is sealed with your password and never written to a file. In layout B, <code>doorbell lock</code> also pauses watching until <code>doorbell unlock</code>. The older <code>doorbell sender add --token-file</code> still works.</p>
           </li>
           <li>
             <h3><span class="who">The agent</span> Writes a draft</h3>
@@ -437,9 +439,9 @@ doorbell unlock            # after a reboot</code></pre>
       <div class="wrap">
         <h2 id="privacy-h">Security and privacy</h2>
         <ul class="sec-list">
-          <li><h3>Read-only watching</h3><p>The daemon never calls an LLM, and watches with a token that has read scopes only (unless you chose the single read+write app, where the token is sealed); <code>identity add</code> rejects tokens missing scopes and warns about extra ones. Optional sending uses a second token, sealed with your password.</p></li>
+          <li><h3>Read-only watching</h3><p>The daemon never calls an LLM, and watches with a token that has read scopes only (unless Slack returns one that can post, which Doorbell seals with your password instead of saving it in a file); <code>identity add</code> rejects tokens missing scopes and warns about extra ones. Optional sending uses a second token, sealed with your password.</p></li>
           <li><h3>Local only</h3><p>The daemon listens on 127.0.0.1 and every request carries a random access key from a mode-600 file, so other users on the machine cannot use it. No cloud service, no public URL.</p></li>
-          <li><h3>You never handle the token</h3><p><code>doorbell login</code> uses OAuth with PKCE and no client secret; its listener binds 127.0.0.1 and checks <code>state</code>. A read-only token is saved in a file only you can read (mode 600). The setup skill never asks for a token in chat.</p></li>
+          <li><h3>You never handle the token</h3><p><code>doorbell login</code> uses OAuth with PKCE and no client secret; its listener binds 127.0.0.1 and checks <code>state</code>. A read-only token is saved in a file only you can read (mode 600) and renews itself; <code>doorbell logout</code> revokes it. The setup skill never asks for a token in chat.</p></li>
           <li><h3>It never writes your harness settings</h3><p>Doorbell does not touch your agent's permission rules. Slack write access through Doorbell exists only if you set up sending and approve or grant with your password.</p></li>
           <li><h3>Short memory</h3><p>Messages are kept for 7 days, then deleted. Subscription changes an agent makes are audited and pop a notification, and an agent can only claim and ack its own items.</p></li>
           <li class="main-risk"><h3>Prompt injection is the main risk</h3><p>The instructions tell the agent to treat message text as data and to escalate anything that commits you. That helps but is not a guarantee, which is why the hard limit is the agent's tool permissions.</p></li>

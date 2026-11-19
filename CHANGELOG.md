@@ -14,21 +14,48 @@ Sign in to Slack with one command instead of copying a token.
 
 - `doorbell login`: Slack OAuth with PKCE and a `localhost` redirect. Any workspace member,
   not only app collaborators, signs in with one command and a click on Allow. The token is
-  never shown or pasted, and no client secret is used. Options: `--client-id`, `--for
-  watch|send|both`, `--redirect-uri`, `--team`, `--no-browser`, `--timeout`, `--as`. The
+  never shown or pasted, and no client secret is used. Options: `--client-id`, `--send`,
+  `--for watch|send|both`, `--redirect-uri`, `--team`, `--no-browser`, `--timeout`. The
   Client ID can also come from config `slack_client_id` or `DOORBELL_SLACK_CLIENT_ID`.
-- Three app layouts: A, one read-only app; B, one read+write app; C, two apps. See
-  `docs/ORG-SETUP.md`.
-- Single-token mode (layout B, `doorbell login --for both`): one token watches and sends,
-  sealed with your password, with no file on disk. After a restart the identity is `locked`
-  until `doorbell unlock`, which resumes polling from the saved cursors, so nothing is missed.
-- Token renewal for rotating tokens, before they expire while the daemon runs. If renewal
-  fails the identity shows `needs_login`; `status` and `doctor` say to run `doorbell login`.
-- `status` shows each identity's `mode`, `status` (`ok`, `locked`, `needs_login`, `broken`)
-  and `token_expires_in_s`.
-- `slack-app-manifest-readwrite.yaml` for layout B.
-- `docs/ORG-SETUP.md`: for workspace admins, how to choose a layout, reuse an existing
-  internal app, enable PKCE (one-way), share the Client ID and revoke a member's token.
+- Automatic layouts. With no flags, login asks Slack for the read scopes only and decides from
+  what the returned token can really do. A token that can't post is saved in a credentials
+  file (mode 600) and watching is unattended (layout A). A token that can post is explained,
+  and, only for the owner in a terminal, sealed with a password so that one token watches and
+  sends (layout B, single-token mode). If it isn't the owner in a terminal, login refuses,
+  revokes the new token and saves nothing. `--for watch` refuses a token that can post.
+- `doorbell login --send` turns on sending. With the app you watch with, it switches to one
+  sealed token (layout B), revokes the old file token and deletes its file. With another app
+  (`--client-id`), the watch token stays read-only in its file and the new token is sealed
+  (layout C). Layout C needs two different Slack apps.
+- Slack adds up the scopes a person approved for one app across all of their tokens for it, so
+  a read-only sign-in can return a token that can post. Doorbell checks the token it got. The
+  docs explain how to reset it and why approvals are per person.
+- A guard: if a file token saved by `doorbell login` later becomes able to post, the daemon
+  stops using it, sets `needs_login` and notifies once. `doorbell login` then seals it.
+- `doorbell logout [--as U]`: revokes Doorbell's tokens (`auth.revoke`) and forgets them.
+  Agents and cursors stay. It asks for the password when a sealed token exists. Other tools
+  that use the same app keep their tokens, and so the accumulated scopes.
+- Sign-in from a browser on another machine (SSH, servers): `doorbell login` prints the link;
+  after Allow, paste the `http://localhost:8765/doorbell/callback?code=...&state=...` address
+  the browser ends on into the waiting command (it prompts in a terminal). The code is
+  single-use and useless without the PKCE verifier, which never leaves the machine.
+  `ssh -L 8765:localhost:8765` also works.
+- Single-token mode (layout B): one token watches and sends, sealed with your password, with no
+  file on disk. After a restart the identity is `locked` (one notification) until
+  `doorbell unlock`, which resumes polling from the saved cursors and renews the token if it
+  expired meanwhile. `doorbell lock` also pauses watching until `doorbell unlock`.
+- Token renewal. Tokens from a localhost sign-in expire after 12 hours and come with a refresh
+  token; Doorbell renews them on its own with no client secret, at most once per half of a
+  token's life and when less than an hour is left. With PKCE refresh tokens last 30 days, so
+  after 30 days without Doorbell, sign in again. If renewal fails the identity shows
+  `needs_login` with one notification; cursors are kept, so `doorbell login` catches up.
+- `status` shows each identity's `mode` (`file` or `sealed`), `status` (`ok`, `locked`,
+  `needs_login`, `broken`), `token_expires_in_s`, `client_id` and a `next` hint.
+- `slack-app-manifest-readwrite.yaml` for an app that allows read and write scopes.
+- `docs/ORG-SETUP.md`: for workspace admins, how to reuse an existing internal app (redirect
+  URL, scopes, PKCE), the warning that **Reinstall to Workspace** grants the installer all
+  configured user scopes, sharing the Client ID, and revoking a member's token.
+- A troubleshooting table for sign-in in `docs/SETUP.md`.
 - `docs/COMPARISON.md`: Agent Doorbell compared with about 20 ways to put an agent on Slack
   (OpenClaw, Claude in Slack, the Slack MCP, Cursor, Devin, Socket Mode and webhook bots,
   n8n, Zapier and others), use cases, and when not to use it. Also on the website.
@@ -38,14 +65,21 @@ Sign in to Slack with one command instead of copying a token.
 - `slack-app-manifest.yaml` and `slack-app-manifest-sender.yaml` have `pkce_enabled: true`
   and the redirect URL `http://localhost:8765/`. Enabling PKCE makes the app a public client
   and can't be undone except by Slack support.
+- `doorbell login` ignores the `identify` scope Slack adds to every sign-in.
 - `docs/SETUP.md` is built around `doorbell login`; the manual token file still works.
-- The setup skill runs `doorbell login --for watch` (the person clicks Allow); the status
-  skill explains `locked` and `needs_login`.
+- The setup skill runs `doorbell login` (the person clicks Allow); the status skill explains
+  `locked` and `needs_login`.
+
+### Fixed
+
+- `doorbell sender remove` didn't delete the sealed sender token in 0.2.0 (a code line ended
+  up inside a comment). In single-token mode it now refuses: switch watching to a read-only
+  token first.
 
 ### Security
 
-- A token that can post (`chat:write`) is never stored in a plain file: a watch-only login
-  refuses it, and `--for both` and `--for send` seal it with your password.
+- A token that can post (`chat:write`) is never stored in a plain file, and never kept for a
+  login that an agent ran. It is sealed with your password, or revoked.
 - The login callback listens on 127.0.0.1 only, checks `state`, and serves one request.
   Credentials files are mode 600 and rewritten atomically on renewal.
 

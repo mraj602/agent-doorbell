@@ -12,7 +12,7 @@ From a shell: `claude plugin marketplace add mraj602/agent-doorbell` and
 
 | Skill | What it does |
 |---|---|
-| `/agent-doorbell:setup` | Sets up Agent Doorbell step by step with a check after each step. Installs the `doorbell` command if it's missing (after asking), and signs you in with `doorbell login`: you click Allow and no token is pasted. |
+| `/agent-doorbell:setup` | Sets up Agent Doorbell step by step with a check after each step. Installs the `doorbell` command if it's missing (after asking), and signs you in with `doorbell login`: you click Allow and no token is pasted. If the token can post, you run the sign-in yourself in a terminal, because it is sealed with your password. |
 | `/agent-doorbell:handle` | Claims the queue once, handles every item, then stops. Use it headless: `claude -p "/agent-doorbell:handle" --allowedTools ...`. |
 | `/agent-doorbell:listen` | Live mode: waits on the queue in the background and handles messages as they arrive. |
 | `/agent-doorbell:status` | Explains what the watcher is doing: agents, queue, stuck items, API use, and whether an identity is `locked` or needs `doorbell login`. |

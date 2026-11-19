@@ -1,4 +1,5 @@
-# Slack app manifest for Agent Doorbell: the read-only watcher (layout A).
+# Slack app manifest for Agent Doorbell: the read-only watcher (layout A, and the watching
+# app of layout C).
 #
 # To use it (a workspace admin or anyone who may create apps does this once):
 #   1. Go to https://api.slack.com/apps and choose Create New App -> From a manifest.
@@ -12,6 +13,9 @@
 # This is an internal app for your own workspace. It has user token scopes only, all of them
 # read-only: no bot user, no bot scopes, no event subscriptions and no Socket Mode. Agent
 # Doorbell polls Slack and never posts.
+# `doorbell login` asks for these read scopes only. Because the app has no write scope, a
+# sign-in can never return a token that can post. No reinstall is needed: each person's
+# sign-in grants their own token.
 #
 # pkce_enabled makes this a public client (no client secret) so that any workspace member
 # can sign in, not only app collaborators. Slack treats this as one-way: once PKCE is on,
