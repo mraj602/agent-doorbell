@@ -253,9 +253,9 @@ A sealed token is renewed while Doorbell is unlocked. If it expired while locked
 ### If a file token later becomes able to post
 
 If a token that `doorbell login` saved in a file later becomes able to post (you approved
-`chat:write` for that app somewhere else, so Slack's scopes added up), the daemon stops using
-it, sets the identity to `needs_login` and notifies you once. Run `doorbell login`: it seals
-the token (layout B).
+`chat:write` for that app somewhere else, so Slack's scopes added up), the daemon revokes it
+at once, deletes its file, sets the identity to `needs_login` and notifies you once. Run
+`doorbell login`: it seals a new token (layout B).
 
 ### Sign out: `doorbell logout`
 

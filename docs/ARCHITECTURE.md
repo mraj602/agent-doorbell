@@ -243,7 +243,8 @@ client secret.
    `redirect_uri`, `state` and the S256 `code_challenge`) and opens the browser. Without
    `--for`, `user_scope` is the read scopes only.
 3. The person clicks Allow. Slack redirects to the listener with `code` and `state`. The
-   listener checks `state`, answers with a small page, serves that one request and stops.
+   listener checks `state`, answers with a small page and stops after the matching response
+   (a wrong `state` gets a 400 and the listener keeps waiting).
    An `error` in the query (for example `access_denied`) ends the login with that error.
    If the browser is on another machine, the redirect never reaches the listener. When
    `login` runs in a terminal it also reads a line from the person: the address the browser
@@ -278,8 +279,8 @@ missed. `doorbell lock` on a sealed identity locks it the same way.
 
 **The file-token guard.** On each poll the daemon checks the scopes Slack reports for a file
 token that `doorbell login` wrote. If it can now post (the person approved `chat:write` for the
-app somewhere), the daemon stops using it, sets `needs_login` and notifies once. `doorbell
-login` then seals it. Token files the person made by hand aren't touched.
+app somewhere), the daemon revokes it, deletes its file, sets `needs_login` and notifies once.
+Renewal never writes such a token to a file. `doorbell login` then seals a new one. Token files the person made by hand aren't touched.
 
 **Renewal.** Tokens from a localhost sign-in rotate: they expire after 12 hours. On each
 lifecycle tick the daemon renews a credential when it has less than `renew_before` (an hour)
@@ -326,7 +327,7 @@ and macOS, `%LOCALAPPDATA%\doorbell` on Windows (override with `DOORBELL_HOME`).
 | Slack rate limit (429) | `Retry-After` honoured; quiet conversations slow down first. |
 | Token revoked or scope removed | The identity is marked broken, polling for it stops, and you get a notification. |
 | Token renewal fails or the refresh token expired (30 days off) | The identity is `needs_login`, polling for it stops, you get one notification, and cursors are kept. Run `doorbell login`; it catches up. |
-| A file token from `login` becomes able to post | The daemon stops using it, sets `needs_login` and notifies once. `doorbell login` seals it. |
+| A file token from `login` becomes able to post | The daemon revokes it, deletes its file, sets `needs_login` and notifies once. `doorbell login` seals a new one. |
 | Restart with a sealed identity (single-token mode) | The identity is `locked` (one notification) until `doorbell unlock`, then polling resumes from the cursors. `doorbell lock` does the same on demand. |
 | Backlog not consumed for 15 minutes | Desktop notification: "agent X isn't consuming". |
 

@@ -6,7 +6,7 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2026-11-20
 
 Sign in to Slack with one command instead of copying a token.
 
@@ -31,9 +31,11 @@ Sign in to Slack with one command instead of copying a token.
   a read-only sign-in can return a token that can post. Doorbell checks the token it got. The
   docs explain how to reset it and why approvals are per person.
 - A guard: if a file token saved by `doorbell login` later becomes able to post, the daemon
-  stops using it, sets `needs_login` and notifies once. `doorbell login` then seals it.
+  revokes it at once, deletes its file, sets `needs_login` and notifies once. Renewal never
+  writes a token that can post to a file. `doorbell login` then seals a new one.
 - `doorbell logout [--as U]`: revokes Doorbell's tokens (`auth.revoke`) and forgets them.
-  Agents and cursors stay. It asks for the password when a sealed token exists. Other tools
+  Agents and cursors stay. It asks for the password when a sealed token exists. A token file
+  you made yourself is only forgotten, not revoked. Other tools
   that use the same app keep their tokens, and so the accumulated scopes.
 - Sign-in from a browser on another machine (SSH, servers): `doorbell login` prints the link;
   after Allow, paste the `http://localhost:8765/doorbell/callback?code=...&state=...` address
@@ -74,14 +76,23 @@ Sign in to Slack with one command instead of copying a token.
 
 - `doorbell sender remove` didn't delete the sealed sender token in 0.2.0 (a code line ended
   up inside a comment). In single-token mode it now refuses: switch watching to a read-only
-  token first.
+  token first. `sender remove` explains `doorbell logout` instead.
 
 ### Security
 
 - A token that can post (`chat:write`) is never stored in a plain file, and never kept for a
   login that an agent ran. It is sealed with your password, or revoked.
-- The login callback listens on 127.0.0.1 only, checks `state`, and serves one request.
-  Credentials files are mode 600 and rewritten atomically on renewal.
+- The login callback listens on 127.0.0.1 only and checks `state`; a response with the wrong
+  `state` gets a 400 and the login keeps waiting, so another local process can't end it.
+  Credentials files are written through a new temporary file with mode 600 in a mode-700
+  folder and replaced atomically on renewal.
+- `login_both` and `sender add` refuse the watcher's own token, and setting up sending for the
+  first time sends a desktop notification ("If that wasn't you, run `doorbell logout`").
+- Every change to sealed credentials (renewal, `passwd`, replacing, `unlock`, `logout`) runs
+  under one lock, so a renewal can't re-seal with a stale key.
+- `identity add` can't replace an identity in single-token mode. Approving a draft whose
+  sealed token had to be renewed no longer unlocks Doorbell as a side effect.
+- `doorbell login --for send|both` doesn't open a browser by itself: you open the printed link.
 
 ## [0.2.0] - 2026-11-19
 

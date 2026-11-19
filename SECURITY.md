@@ -70,8 +70,8 @@ Agent Doorbell is a volunteer project and has no bug bounty.
   and you click Allow in the browser. The token goes from Slack to the daemon's machine and is
   never shown, printed or passed on a command line. The login generates a random PKCE
   verifier and `state`, and refuses a callback whose `state` doesn't match. The redirect
-  listener binds 127.0.0.1 only, accepts one request on one path, then stops (it also stops
-  after a timeout). The app's Client ID is not a secret. Enabling PKCE makes the Slack app a
+  listener binds 127.0.0.1 only and answers one path; a response with the wrong `state` gets a
+  400 and is ignored, and the listener stops after the matching response or a timeout. The app's Client ID is not a secret. Enabling PKCE makes the Slack app a
   public client; only Slack support can undo that.
 - **A token that can post never sits in a plain file.** `doorbell login` asks Slack for read
   scopes only, then decides from what the token can really do. A token that can't post is

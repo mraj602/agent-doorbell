@@ -51,8 +51,8 @@ Two consequences for you:
 - **Layout C genuinely needs two different Slack apps.** With one app, the watching token
   would be able to post as soon as the same person approves `chat:write` for it.
 - **The guard.** If a token that `doorbell login` saved in a file later becomes able to post,
-  the member's daemon stops using it, sets the identity to `needs_login` and notifies once.
-  `doorbell login` then seals it.
+  the member's daemon revokes it at once, deletes its file, sets the identity to `needs_login`
+  and notifies once. `doorbell login` then seals a new one.
 
 ## Which app
 
