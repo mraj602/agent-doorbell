@@ -33,7 +33,8 @@ class MockSlack:
                                 "profile": {"real_name": "Me Myself", "display_name": "me"}}}
         self.channels = {}       # id -> {"meta": {...}, "messages": [...]}
         self.usergroups = {}
-        self.calls = []          # {"method", "params", "t"}
+        self.token_scopes = {}   # token -> scopes, for a second token (the sender) with other scopes
+        self.calls = []          # {"method", "params", "t", "token"}
         self.errors = {}         # method -> Slack error string returned with ok=false
         self.max_page = None     # cap on page size, to exercise cursor pagination
         self._n = 0
@@ -51,13 +52,18 @@ class MockSlack:
             def do_GET(self):
                 u = urllib.parse.urlparse(self.path)
                 params = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
+                if self.command == "POST" and int(self.headers.get("Content-Length") or 0):
+                    body = self.rfile.read(int(self.headers["Content-Length"])).decode()
+                    params.update({k: v[0] for k, v in urllib.parse.parse_qs(body).items()})
                 method = u.path.rsplit("/", 1)[-1]
-                status, body = mock.handle(method, params)
+                token = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
+                scopes = mock.token_scopes.get(token, mock.scopes)
+                status, body = mock.handle(method, params, token, scopes)
                 raw = json.dumps(body).encode()
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(raw)))
-                self.send_header("X-OAuth-Scopes", ",".join(mock.scopes))
+                self.send_header("X-OAuth-Scopes", ",".join(scopes))
                 self.end_headers()
                 self.wfile.write(raw)
 
@@ -153,15 +159,17 @@ class MockSlack:
             return {c["method"] for c in self.calls}
 
     # ---------- the API ----------
-    def handle(self, method, params):
+    def handle(self, method, params, token=None, scopes=None):
         with self.lock:
-            self.calls.append({"method": method, "params": params, "t": time.time()})
+            self.calls.append({"method": method, "params": params, "t": time.time(), "token": token})
             if method in self.errors:
                 return 200, {"ok": False, "error": self.errors[method]}
             fn = getattr(self, "m_" + method.replace(".", "_"), None)
             if not fn:
                 return 200, {"ok": False, "error": "unknown_method"}
             try:
+                if method in ("chat.postMessage", "reactions.add"):
+                    return 200, {"ok": True, **fn(params, scopes if scopes is not None else self.scopes)}
                 return 200, {"ok": True, **fn(params)}
             except KeyError as e:
                 return 200, {"ok": False, "error": e.args[0] if isinstance(e.args[0], str) else "not_found"}
@@ -174,6 +182,19 @@ class MockSlack:
         chunk = items[start:start + limit]
         more = start + limit < len(items)
         return chunk, more, (str(start + limit) if more else "")
+
+    def m_chat_postMessage(self, p, scopes):
+        if "chat:write" not in scopes:
+            raise KeyError("missing_scope")
+        ts = self.post(p["channel"], p["text"], user=self.me, thread_ts=p.get("thread_ts"))
+        return {"channel": p["channel"], "ts": ts}
+
+    def m_reactions_add(self, p, scopes):
+        if "reactions:write" not in scopes:
+            raise KeyError("missing_scope")
+        msg = next(m for m in self.channels[p["channel"]]["messages"] if m["ts"] == p["timestamp"])
+        msg.setdefault("reactions", []).append({"name": p["name"], "users": [self.me]})
+        return {}
 
     def m_auth_test(self, p):
         me = self.users[self.me]

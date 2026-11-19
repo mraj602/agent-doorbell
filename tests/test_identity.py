@@ -97,7 +97,8 @@ def test_requests_without_the_access_key_are_refused(env):
     import json as _json
     import socket as _socket
     ep = _json.loads(env.endpoint.read_text())
-    assert oct(env.endpoint.stat().st_mode & 0o777) == "0o600"
+    if os.name != "nt":   # Windows has no Unix modes; the file sits in the user's own profile
+        assert oct(env.endpoint.stat().st_mode & 0o777) == "0o600"
     for key in (None, "wrong"):
         s = _socket.create_connection(("127.0.0.1", ep["port"]))
         req = {"op": "status"} if key is None else {"op": "status", "auth": key}

@@ -22,6 +22,10 @@ acked; and the agent can't end its turn while it holds claimed, unresolved items
 only in an agent folder (one with a `.doorbell-agent` file), and do nothing if `doorbell`
 isn't installed.
 
+The `handle` and `listen` skills also use Doorbell's own sending (`doorbell draft`, `doorbell
+send`) when the folder's `AGENTS.md` says so; see
+[Sending through Doorbell](https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md#sending-through-doorbell-optional).
+
 The plugin grants no permissions. Which Slack tools the agent may use is up to your Claude
 Code settings or command-line flags; see the
 [setup guide](https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md#6-decide-what-the-agent-may-do).

@@ -9,11 +9,15 @@ and stop at the first failure (see Troubleshooting in the setup guide). Keep eve
 one sentence and name the default.
 
 Agent Doorbell is a small daemon that watches Slack with a read-only token and wakes the
-person's agent only when a message needs it. It never posts. The agent replies with its own
-Slack tool, if its permissions allow.
+person's agent only when a message needs it. The agent replies with its own Slack tool, if
+its permissions allow, or through Doorbell (optional sending, step 6b), where the person
+approves drafts and grants direct sending with a password.
 
 Rules that always hold:
 
+- **Never ask for the Slack token or the sending password in the chat**, and never put
+  either in a command line. Never run `doorbell sender add`, `grant`, `unlock`, `approve`,
+  `review` or `passwd` yourself: the person runs them in their own terminal.
 - **Never ask for the Slack token in the chat**, and never put it in a command line. The
   person saves it to a file with the command in step 2, in their own terminal.
 - **Never change the person's Claude Code permission settings** (`settings.json`, allow or
@@ -100,7 +104,8 @@ Fill in `AGENTS.md` with the person. Ask, one at a time:
 1. Their role, team and what they own.
 2. Which repos or folders the agent may read to answer questions.
 3. What it should answer, and what it should always leave for them.
-4. Which level it gets (below; default draft if they have a Slack tool, triage otherwise).
+4. Which level it gets (below; default draft if they have a Slack tool, triage otherwise),
+   and whether replies should go through Doorbell instead (step 6b).
 
 Replace the `TODO` lines with their answers, keep the "Leave for" and "Rules that always
 apply" sections, and in "How you may reply" keep only the level they chose.
@@ -122,6 +127,24 @@ they have no Slack tool, only triage works (the Slack plugin installs with
 `/plugin install slack@claude-plugins-official`).
 
 **Check:** `grep -c TODO <folder>/AGENTS.md` prints `0`, or only TODOs they chose to keep.
+
+## 6b. Optional: sending through Doorbell
+
+Offer it if they have no Slack tool, or want one send policy for every agent. Then the agent
+needs only the triage flags (`Bash(doorbell *)`). Tell the person, in one message:
+
+1. Create a second app the same way as in step 2, from
+   <https://github.com/mraj602/agent-doorbell/blob/main/slack-app-manifest-sender.yaml>,
+   install it, and save its User OAuth Token with the same command as in step 2 but to
+   `~/.config/doorbell/sender-token`.
+2. In their own terminal, run `doorbell sender add --token-file ~/.config/doorbell/sender-token`
+   and choose a sending password. Then delete the token file.
+
+In `AGENTS.md`, under "How you may reply", keep the Doorbell draft line (or the send line, if
+they will grant the agent). Explain: drafts are approved with `doorbell review`;
+`doorbell grant <name>` lets the agent send directly; after a reboot, `doorbell unlock`.
+
+**Check:** `doorbell status` shows `"sending"` with their user and `"unlocked": true`.
 
 ## 7. Run the agent
 
@@ -153,5 +176,6 @@ that DM, or an escalated item in `doorbell log`.
 
 **Check:** `doorbell status` shows the item done and `stuck` empty.
 
-End with a short summary: where the agent folder is, its level, how it runs, and the two
-everyday commands, `doorbell status` and `/agent-doorbell:status`.
+End with a short summary: where the agent folder is, its level, how it runs, and the
+everyday commands, `doorbell status` and `/agent-doorbell:status` (plus `doorbell review`
+if they set up sending).

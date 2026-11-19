@@ -1,0 +1,29 @@
+# Optional second Slack app for Agent Doorbell: the token Doorbell sends with.
+#
+# Only needed if you want agents to reply through Doorbell (`doorbell draft` and `doorbell
+# send`). The watcher keeps using its own read-only token; this one can only post and react.
+#
+# To use it:
+#   1. Go to https://api.slack.com/apps and choose Create New App -> From a manifest.
+#   2. Pick the same workspace, paste this file, and create the app.
+#   3. Choose Install to Workspace and approve it.
+#   4. Under OAuth & Permissions, copy the User OAuth Token (xoxp-...) into a file with mode
+#      600, then run `doorbell sender add --token-file <file>` in your terminal. Doorbell seals
+#      it with a password you choose; after that you can delete the file.
+#
+# Messages are posted as you (user token), the same as the ones you type.
+_metadata:
+  major_version: 1
+  minor_version: 1
+display_information:
+  name: Agent Doorbell Sender
+  description: Posts the replies you approve, or allow, through Agent Doorbell.
+oauth_config:
+  scopes:
+    user:
+      - chat:write
+      - reactions:write
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
