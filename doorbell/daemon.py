@@ -125,7 +125,6 @@ class Daemon:
     async def renew(self):
         """Renew sign-ins from `doorbell login` before they expire (only tokens Slack issues with
         an expiry; most user tokens don't expire)."""
-        soon = time.time() + self.cfg["renew_before"]
         for r in self.q("SELECT user_id, token_file FROM identities WHERE mode='file' AND status='ok'"):
             path = os.path.expanduser(r["token_file"])
             try:
@@ -133,7 +132,7 @@ class Daemon:
             except OSError:
                 continue
             forced = r["user_id"] in self.force_renew
-            if not creds or not creds.get("expires_at") or (creds["expires_at"] > soon and not forced):
+            if not creds or not creds.get("expires_at") or not (forced or oauth.due(creds, self.cfg["renew_before"])):
                 continue
             self.force_renew.discard(r["user_id"])
             try:

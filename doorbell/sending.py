@@ -131,7 +131,7 @@ async def renew_sealed(d, ident, force=False):
     if ident not in d.sealed_keys:
         return True
     enc, creds = d.sealed_keys[ident]
-    if not force and not (creds.get("expires_at") and creds["expires_at"] - time.time() < d.cfg["renew_before"]):
+    if not force and not oauth.due(creds, d.cfg["renew_before"]):
         return True
     try:
         new = await asyncio.to_thread(oauth.refresh, d.cfg["slack_api_base"], creds)

@@ -84,7 +84,7 @@ async def op_identity_add(d, req):
                                                               time.time()))
     d.slacks.pop(info["user_id"], None)
     store.audit(d.db, "identity_add", user=info["user_id"], team=info["team_id"])
-    extra = sorted(set(sl.scopes or []) - REQUIRED_SCOPES)
+    extra = sorted(set(sl.scopes or []) - REQUIRED_SCOPES - {"identify"})   # Slack always adds identify
     return {"identity": info["user_id"], "user": info["user"], "team": info["team"],
             "warning": f"token has scopes doorbell never uses: {extra}. A read-only token is safer." if extra else None}
 

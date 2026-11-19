@@ -140,8 +140,9 @@ def _post(api_base, method, params):
 
 def _creds(client_id, tok, user_id=None, team_id=None):
     exp = tok.get("expires_in")
+    now = time.time()
     return {"v": 1, "token": tok["access_token"], "refresh_token": tok.get("refresh_token"),
-            "expires_at": (time.time() + float(exp)) if exp else None, "client_id": client_id,
+            "expires_at": (now + float(exp)) if exp else None, "obtained_at": now, "client_id": client_id,
             "user_id": user_id or tok.get("id"), "team_id": team_id,
             "scopes": sorted(s for s in (tok.get("scope") or "").split(",") if s)}
 
@@ -239,6 +240,17 @@ def revoke(api_base, creds):
             return json.loads(r.read()).get("revoked", False)
     except Exception:
         return False
+
+
+def due(creds, renew_before, now=None):
+    """Renew when less than `renew_before` seconds are left, or less than half the token's life
+    for short-lived tokens, so a token is never renewed on every check."""
+    exp = creds.get("expires_at")
+    if not exp:
+        return False
+    now = now or time.time()
+    life = exp - (creds.get("obtained_at") or exp - 2 * renew_before)
+    return exp - now < min(renew_before, life / 2)
 
 
 def write_creds(path, creds):
