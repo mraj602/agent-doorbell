@@ -54,7 +54,7 @@ Slack tool, under whatever rules your agent's harness enforces.
 ```bash
 pipx install agent-doorbell
 # or: uv tool install agent-doorbell
-# or, before the first PyPI release: pipx install git+https://github.com/mraj602/agent-doorbell
+# or the latest from GitHub: pipx install git+https://github.com/mraj602/agent-doorbell
 ```
 
 **Check:** `doorbell --version` prints `doorbell 0.1.0` or newer.
