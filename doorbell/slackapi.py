@@ -21,9 +21,27 @@ class RateLimited(Exception):
         self.retry_after = retry_after
 
 
+def creds_from_text(text):
+    """A credentials JSON object (written by `doorbell login`), or None."""
+    try:
+        c = json.loads(text)
+    except ValueError:
+        return None
+    return c if isinstance(c, dict) and isinstance(c.get("token"), str) else None
+
+
+def read_creds(path):
+    with open(path) as f:
+        return creds_from_text(f.read())
+
+
 def read_token(path):
     with open(path) as f:
-        m = re.search(r"xox[pb]-[A-Za-z0-9-]+", f.read())
+        text = f.read()
+    c = creds_from_text(text)
+    if c:
+        return c["token"]
+    m = re.search(r"(?:xoxe\.)?xox[pb]-[A-Za-z0-9-]+", text)
     if not m:
         raise ValueError(f"no Slack token found in {path}")
     return m.group(0)

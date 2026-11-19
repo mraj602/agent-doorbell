@@ -8,7 +8,7 @@ import os
 import time
 
 from . import sending, store
-from .slackapi import Slack, read_token
+from .slackapi import Slack, read_creds, read_token
 
 SUB_KEYS = {"dms", "group_dms", "channels", "everyone_in", "users", "usergroups",
             "mentions_of_me", "threads_im_in", "allow_bots"}
@@ -73,14 +73,21 @@ async def op_identity_add(d, req):
         raise ValueError(f"{path} is readable by other users; run: chmod 600 {path}")
     sl = Slack(read_token(path), d.cfg["slack_api_base"])
     info = await asyncio.to_thread(sl.call, "auth.test")
+    if d.q1("SELECT 1 FROM identities WHERE user_id=? AND mode='sealed'", info["user_id"]):
+        raise ValueError("this identity is in single-token mode (one sealed token watches and sends); run "
+                         "`doorbell logout` first (it needs the password)")
+    if read_creds(path) and "chat:write" in (sl.scopes or []):
+        raise ValueError("this sign-in can post messages (chat:write); Doorbell keeps such a token sealed, not in a "
+                         "file. Run `doorbell login` in your terminal")
     missing = sorted(REQUIRED_SCOPES - set(sl.scopes or REQUIRED_SCOPES))
     if missing:
         raise ValueError(f"the token is missing scopes {missing}; add them under User Token Scopes and reinstall the app")
-    d.db.execute("INSERT OR REPLACE INTO identities VALUES(?,?,?,?,'ok',NULL,?)",
-                 (info["user_id"], info["team_id"], info["url"], path, time.time()))
+    d.db.execute("INSERT OR REPLACE INTO identities(user_id, team_id, team_url, token_file, status, error, added_at, "
+                 "mode) VALUES(?,?,?,?,'ok',NULL,?,'file')", (info["user_id"], info["team_id"], info["url"], path,
+                                                              time.time()))
     d.slacks.pop(info["user_id"], None)
     store.audit(d.db, "identity_add", user=info["user_id"], team=info["team_id"])
-    extra = sorted(set(sl.scopes or []) - REQUIRED_SCOPES)
+    extra = sorted(set(sl.scopes or []) - REQUIRED_SCOPES - {"identify"})   # Slack always adds identify
     return {"identity": info["user_id"], "user": info["user"], "team": info["team"],
             "warning": f"token has scopes doorbell never uses: {extra}. A read-only token is safer." if extra else None}
 
@@ -318,8 +325,7 @@ async def op_status(d, req):
         "api_calls": {"last_1m": calls(60), "last_1h": calls(3600), "since_start": d.api_total},
         "rate_paused_for_s": max(0, round(d.pause_until - now)),
         "poll_set": sorted(f"{i}:{c}" for i, c in d.polling),
-        "identities": [dict(r) | {"token_file": r["token_file"]} for r in d.q(
-            "SELECT user_id, team_id, status, error, token_file FROM identities")],
+        "identities": [identity_dict(d, r) for r in d.q("SELECT * FROM identities")],
         "agents": [agent_dict(d, a) for a in d.q("SELECT * FROM agents ORDER BY name")],
         "stuck": [dict(r) for r in d.q("SELECT seq, agent_id, channel, attempts FROM items WHERE state='stuck'")],
         **sending.sending_status(d),
@@ -329,14 +335,42 @@ async def op_status(d, req):
     return out
 
 
+def identity_dict(d, r):
+    """Status of one identity, never the token."""
+    creds = None
+    if r["mode"] == "sealed":
+        creds = d.sealed_keys.get(r["user_id"], (None, None))[1]
+    elif r["token_file"]:
+        try:
+            creds = read_creds(os.path.expanduser(r["token_file"]))
+        except OSError:
+            pass
+    exp = (creds or {}).get("expires_at")
+    out = {"user_id": r["user_id"], "team_id": r["team_id"], "mode": r["mode"] or "file", "status": r["status"],
+           "error": r["error"], "token_file": r["token_file"],
+           "token_expires_in_s": round(exp - time.time()) if exp else None,
+           "client_id": (creds or {}).get("client_id")}
+    if r["status"] == "locked":
+        out["next"] = "run `doorbell unlock`; watching resumes and catches up"
+    elif r["status"] == "needs_login":
+        out["next"] = "run `doorbell login`" + (" --for both" if r["mode"] == "sealed" else "")
+    return out
+
+
 async def op_doctor(d, req):
     """Checks a new user needs: each identity's token and scopes, and which agent apps post as them."""
     out = {"config": {k: d.cfg[k] for k in ("slack_api_base", "agent_app_ids", "idle_ttl", "lease")},
            "identities": []}
     for r in d.q("SELECT * FROM identities"):
-        info = {"user_id": r["user_id"], "team_url": r["team_url"], "status": r["status"]}
+        info = {"user_id": r["user_id"], "team_url": r["team_url"], "mode": r["mode"], "status": r["status"]}
+        if r["status"] != "ok":
+            info["error"] = r["error"]
+            info["next"] = identity_dict(d, r).get("next")
         try:
-            sl = Slack(read_token(os.path.expanduser(r["token_file"])), d.cfg["slack_api_base"])
+            if r["mode"] == "sealed" and r["user_id"] not in d.unlocked:
+                raise ValueError("locked; run `doorbell unlock`")
+            sl = Slack(d.unlocked[r["user_id"]][0] if r["mode"] == "sealed" else
+                       read_token(os.path.expanduser(r["token_file"])), d.cfg["slack_api_base"])
             await asyncio.to_thread(sl.call, "auth.test")
             info["token"] = "ok"
             if sl.scopes is not None:

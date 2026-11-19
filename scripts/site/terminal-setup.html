@@ -9,15 +9,14 @@
 <p><span class="dot">●</span> Setting up Agent Doorbell. I will run a check after each step.</p>
 <p><span class="dot">●</span> <span class="hd">1. Install.</span> <span class="tool">Bash(command -v doorbell)</span></p>
 <p class="dim">&nbsp;&nbsp;&nbsp;/home/you/.local/bin/doorbell</p>
-<p class="dim">&nbsp;&nbsp;&nbsp;<span class="tool">Bash(doorbell --version)</span> → doorbell 0.2.0 <span class="ok">✓</span></p>
-<p><span class="dot">●</span> <span class="hd">2. Your Slack app and token.</span> This part is yours, in a browser:</p>
-<p class="dim">&nbsp;&nbsp;&nbsp;create the app from <span class="s">slack-app-manifest.yaml</span>,<br>&nbsp;&nbsp;&nbsp;install it, copy the <span class="s">xoxp-</span> token.</p>
-<p class="dim">&nbsp;&nbsp;&nbsp;Save it with the command I printed, in <span class="b">your own terminal</span>.</p>
-<p class="dim">&nbsp;&nbsp;&nbsp;I never ask for the token in this chat.</p>
-<p><span class="q">?</span> Token saved to ~/.config/doorbell/slack-token? <span class="dim">(default: yes, continue)</span></p>
+<p class="dim">&nbsp;&nbsp;&nbsp;<span class="tool">Bash(doorbell --version)</span> <span class="ok">✓</span></p>
+<p><span class="dot">●</span> <span class="hd">2. Sign in to Slack.</span> This part is yours, in a browser:</p>
+<p class="dim">&nbsp;&nbsp;&nbsp;run <span class="s">doorbell login</span> in <span class="b">your own terminal</span>,<br>&nbsp;&nbsp;&nbsp;open the link and click Allow.</p>
+<p class="dim">&nbsp;&nbsp;&nbsp;There is no token to copy. I never ask for one in this chat.</p>
+<p><span class="q">?</span> Signed in with Allow? <span class="dim">(default: yes, continue)</span></p>
 <p><span class="dot">●</span> <span class="hd">3. Start the watcher.</span> <span class="tool">Bash(doorbell status)</span></p>
 <p class="dim">&nbsp;&nbsp;&nbsp;"state": "DORMANT": no agents yet, zero Slack API calls <span class="ok">✓</span></p>
-<p><span class="dot">●</span> <span class="hd">4–5.</span> Token added, agent folder created:</p><p class="dim">&nbsp;&nbsp;&nbsp;<span class="s">AGENTS.md  sub.yaml  .doorbell-agent</span></p>
+<p><span class="dot">●</span> <span class="hd">4–5.</span> Signed in, agent folder created:</p><p class="dim">&nbsp;&nbsp;&nbsp;<span class="s">AGENTS.md  sub.yaml  .doorbell-agent</span></p>
 <p><span class="dot">●</span> <span class="hd">6. What may the agent do?</span> Triage, draft or reply. <span class="dim">That is your call:</span></p>
 <p class="dim">&nbsp;&nbsp;&nbsp;I will show the flags. I do not touch your permission settings.</p>
 </div></div></body></html>
