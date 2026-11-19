@@ -103,14 +103,24 @@ Or let Doorbell hold the send policy (0.2.0): give the agent only `Bash(doorbell
 | Infrastructure | a local daemon | none | server, public URL or socket, API key |
 | Catches up after downtime | yes | no | depends |
 
-Why polling and not Slack's Events API or webhooks? Polling needs no public URL or always-on
-socket, and it can catch up after downtime, which events can't. The comparison table,
-pros and cons, and the security model are in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+Most self-hosted Slack agents (OpenClaw, Hermes Agent, Claude Code Slack bots) keep a Socket
+Mode WebSocket open and lose messages sent while it's down; hosted bots (Claude in Slack,
+Cursor, Devin) don't miss, but answer as a bot in their cloud, usually on paid plans.
+Doorbell polls with cursors, so it catches up after downtime, with no public URL, on any
+Slack plan.
+
+**Use it** for an always-on watcher that never misses a message, a coordinator agent that
+routes to project agents, free Slack workspaces without webhooks, and replies that look like
+yours (or, through your agent's Slack MCP tool, are visibly from Claude). **Don't** use it for
+replies within seconds, a team bot everyone @mentions, or if no machine of yours is ever on.
+The full comparison of about 20 tools, use cases and sources is in
+**[docs/COMPARISON.md](docs/COMPARISON.md)**.
 
 ## Documentation
 
 - [Setup guide](docs/SETUP.md): install, Slack app, first agent, test, troubleshooting
-- [Architecture](docs/ARCHITECTURE.md): design, queue and acks, security model, comparisons
+- [Compared with other tools](docs/COMPARISON.md): when to use it and when not, use cases
+- [Architecture](docs/ARCHITECTURE.md): design, queue and acks, security model
 - [Running agents for days](docs/RUNNING.md): live sessions vs headless dispatch, Claude Code limits
 - [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 

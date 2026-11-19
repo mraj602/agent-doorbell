@@ -264,7 +264,7 @@ was chosen for other reasons:
 | Latency | Poll interval (30s for active conversations) | About a second | About a second | About a second | About a second |
 | Catch-up after the laptop was off | **Full**, from cursors | **None documented**: events sent while disconnected are lost | 3 retries over ~5 minutes (optionally hourly for 24h), then lost | None | None |
 | Sees your DMs and group DMs | Yes (user token) | Needs user-scope event subscriptions | Needs user-scope event subscriptions | n/a | Public channels only |
-| Rate-limit exposure | Tier 3 per method, budgeted | None | None | None | None |
+| Rate-limit exposure | Tier 3 per method, budgeted (Slack's 2025 cut for distributed apps doesn't apply to internal apps; see [COMPARISON.md](COMPARISON.md#6-rate-limits)) | None | None | None | None |
 | Extra secrets | One read-only user token | User token + app-level token (`xapp-`) | User token + signing secret | n/a | n/a |
 | Setup | Create app from manifest, copy token | + enable Socket Mode, create app token, subscribe to events | + host an HTTPS endpoint | n/a | n/a |
 
@@ -279,6 +279,10 @@ The router doesn't care where messages come from, so Socket Mode can be added la
 for catch-up. That is on the roadmap.
 
 ## 13. Comparison with other ways to put an agent on Slack
+
+This section compares the approaches. Specific tools (OpenClaw, Claude in Slack, the Slack
+MCP, Cursor, Devin, n8n and others), use cases and when not to use Doorbell are in
+[COMPARISON.md](COMPARISON.md).
 
 | | **Agent Doorbell** | Agent polls Slack itself (`/loop`, cron + MCP) | Hosted Slack bot + LLM API | Slack's built-in AI apps |
 |---|---|---|---|---|
