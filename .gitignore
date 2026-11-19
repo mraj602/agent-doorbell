@@ -1,0 +1,26 @@
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local state and secrets
+*.db
+*.sock
+*.env
+.env
+secrets/
+slack-token
+*.token
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store

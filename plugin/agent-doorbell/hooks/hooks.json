@@ -1,0 +1,28 @@
+{
+  "description": "Agent Doorbell: ack queue items after the agent replies, drafts or reacts in Slack, and keep it from ending a turn with claimed items unresolved. Both hooks act only in an agent folder (one with a .doorbell-agent file), do nothing if the doorbell command is missing, and always exit 0.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": ".*slack_send_message.*|.*slack_schedule_message|.*slack_add_reaction",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v doorbell >/dev/null 2>&1 && doorbell hook post-tool-use || true",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v doorbell >/dev/null 2>&1 && doorbell hook stop || true",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

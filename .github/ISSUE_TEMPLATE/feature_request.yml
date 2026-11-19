@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest a change or addition to Agent Doorbell.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Agent Doorbell aims to stay small: a read-only daemon, no LLM calls, Python standard library plus PyYAML.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen? Mention any alternatives you considered.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues and the docs.
+          required: true
+        - label: This keeps the daemon read-only and free of LLM calls, or I explain why it should not.
+          required: false

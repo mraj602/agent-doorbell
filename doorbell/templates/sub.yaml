@@ -1,0 +1,11 @@
+# Who and what this agent listens to. Apply with `doorbell register` (run in this folder).
+# Change later with `doorbell sub add|remove|set <key> <values> --why "..."`.
+dms: all              # all | followed | none   (followed = only DMs from `users` below)
+group_dms: true       # group DMs you are in
+mentions_of_me: true  # @you in any conversation that is polled
+threads_im_in: true   # new replies in threads you posted in (tracked for 7 days)
+users: []             # followed people, by @handle or user ID, e.g. ["@alex", "U012ABCDEF"]
+usergroups: []        # e.g. ["@platform-team"]: everyone in the group counts as followed
+channels: []          # e.g. ["#proj-x"]: messages from followed users and mentions count
+everyone_in: []       # channels where any human's message counts
+allow_bots: []        # bot IDs whose messages count, e.g. ["B012ABCDEF"]
