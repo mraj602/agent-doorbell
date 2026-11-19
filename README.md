@@ -46,7 +46,6 @@ your agent ◀── doorbell wait (blocks, costs nothing) ───────
 
 ```bash
 pipx install agent-doorbell              # or: uv tool install agent-doorbell
-# not on PyPI yet? pipx install git+https://github.com/mraj602/agent-doorbell
 
 # 1. Create your own read-only Slack app from slack-app-manifest.yaml and save its xoxp- token
 mkdir -p ~/.config/doorbell
