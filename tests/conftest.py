@@ -92,7 +92,7 @@ class Env:
             config.ENDPOINT = old
 
     def cli(self, *args, stdin=None, cwd=None, check=True, timeout=60):
-        r = subprocess.run([sys.executable, "-m", "doorbell", *map(str, args)], env=self.env, input=stdin,
+        r = subprocess.run([sys.executable, "-m", "doorbell", *map(str, args)], env=self.env, input=stdin or "",
                            cwd=cwd or self.home, capture_output=True, text=True, timeout=timeout)
         if check and r.returncode != 0:
             raise AssertionError(f"doorbell {' '.join(map(str, args))} failed ({r.returncode}): {r.stderr}")

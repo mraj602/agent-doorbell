@@ -25,11 +25,14 @@ class NotOwner(SystemExit):
 
 
 def has_terminal():
+    """Both ends on a terminal: agents always capture the output of the commands they run."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False
     if os.name == "nt":
-        return sys.stdin.isatty()
+        return True
     try:
         with open("/dev/tty"):
-            return sys.stdin.isatty()
+            return True
     except OSError:
         return False
 

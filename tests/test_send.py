@@ -260,7 +260,8 @@ def test_owner_commands_refuse_inside_an_agent(senv, args):
     env = {**senv.env, "CLAUDECODE": "1"}
     import subprocess
     import sys
-    r = subprocess.run([sys.executable, "-m", "doorbell", *args], env=env, capture_output=True, text=True)
+    r = subprocess.run([sys.executable, "-m", "doorbell", *args], env=env, capture_output=True, text=True,
+                       stdin=subprocess.DEVNULL, timeout=60)
     assert r.returncode != 0 and "AI agent session" in r.stderr and "CLAUDECODE" in r.stderr
 
 
