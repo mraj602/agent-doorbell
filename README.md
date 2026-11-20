@@ -45,9 +45,12 @@ your agent ◀── doorbell wait (blocks, costs nothing) ───────
   plan.
 - **Any agent, any OS.** Linux, macOS and Windows. Agents register themselves and use three
   commands: `wait`, `inbox --claim` and `ack`. Claude Code gets a plugin with a guided
-  `/agent-doorbell:setup`, handle and listen skills, and hooks that ack automatically.
+  `/agent-doorbell:setup`, handle, listen and status skills, and hooks that ack automatically.
 
 ## Quick start
+
+You need Python 3.10 or newer, a Slack workspace, and the Client ID of a Doorbell Slack app
+(an admin sets one up once; see [docs/ORG-SETUP.md](docs/ORG-SETUP.md)).
 
 ```bash
 pipx install agent-doorbell              # or: uv tool install agent-doorbell
@@ -114,6 +117,7 @@ in layout B.
 | **C. Two apps**: read-only file token, plus a sealed token from a write app (`doorbell login --send --client-id <write app>`) | 2 different | Yes | Watching resumes by itself; sending needs `doorbell unlock` |
 
 A token that can post is never stored in a plain file: it is sealed with your password.
+To choose instead of letting Doorbell decide, pass `--for watch`, `--for send` or `--for both`.
 
 ### How sign-in works
 
@@ -139,6 +143,19 @@ You choose, in your agent's own permissions (see [SETUP step 6](docs/SETUP.md#6-
 | Reply | post as you, react, draft | routine questions you trust it with |
 
 Or let Doorbell hold the send policy: give the agent only `Bash(doorbell *)`; it writes drafts you approve with `doorbell review`, and sends directly only after `doorbell grant`. See [Sending through Doorbell](docs/SETUP.md#sending-through-doorbell-optional).
+
+## Commands
+
+| For | Commands |
+|---|---|
+| Setup | `login`, `logout`, `service install` / `uninstall`, `init-agent`, `identity add` (hand-made token) |
+| Checking | `status`, `doctor`, `log`, `retry` (re-queue stuck items) |
+| Agents | `register`, `deregister`, `sub`, `wait`, `inbox --claim`, `ack`, `dispatch` (headless runner) |
+| Agents replying through Doorbell | `draft`, `send`, `react`, `request-send`, `drafts` |
+| Owner, in a terminal | `review` (approve, edit or reject drafts), `grant`, `revoke`, `unlock`, `lock`, `passwd`, `sender` |
+
+`doorbell <command> --help` shows the options. Commands that ask for the sending password
+refuse to run inside an agent session; `lock` and `revoke` only take power away, so they don't.
 
 ## How it compares
 
