@@ -133,3 +133,130 @@ def test_dispatch_registers_an_unregistered_agent_from_sub_yaml(env, alice, tmp_
     finally:
         p.terminate()
         p.wait(10)
+
+
+# ---------- --handoff (e.g. to a live session through Watchyard) ----------
+RECEIVER = textwrap.dedent("""
+    import json, sys
+    batch = json.load(sys.stdin)
+    with open(sys.argv[1], "a") as f:
+        f.write(json.dumps([[m["text"] for m in it["messages"]] for it in batch["items"]]) + "\\n")
+    if len(sys.argv) > 2:
+        print("no live holder for tag:demo", file=sys.stderr)
+        raise SystemExit(int(sys.argv[2]))
+""")
+
+
+def receiver(tmp_path, code=None):
+    (tmp_path / "recv.py").write_text(RECEIVER)
+    out = tmp_path / "got.jsonl"
+    cmd = f'"{sys.executable}" "{tmp_path / "recv.py"}" "{out}"' + (f" {code}" if code is not None else "")
+    return cmd, out
+
+
+def lines(path):
+    return [json.loads(x) for x in path.read_text().splitlines()] if path.exists() else []
+
+
+def test_handoff_sends_the_batch_and_skips_the_fallback(env, alice, tmp_path):
+    dm = env.mock.add_dm(alice)
+    name = env.register({"dms": "all"})
+    (tmp_path / "agent.py").write_text(FAKE_AGENT)
+    env.mock.post(dm, "for the live session", user=alice)
+    env.wait_items(name)
+    cmd, out = receiver(tmp_path)
+    r = env.cli("dispatch", "--name", name, "--dir", tmp_path, "--once", "--handoff", cmd,
+                "--", sys.executable, "agent.py", timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert lines(out) == [[["for the live session"]]]
+    assert "handed off" in r.stdout and "fake agent saw" not in r.stdout
+    assert len(env.items(name)) == 1   # stays open until the reply shows up in Slack (or an ack)
+
+
+def test_failed_handoff_runs_the_fallback(env, alice, tmp_path):
+    dm = env.mock.add_dm(alice)
+    name = env.register({"dms": "all"})
+    (tmp_path / "agent.py").write_text(FAKE_AGENT)
+    env.mock.post(dm, "nobody holds the tag", user=alice)
+    env.wait_items(name)
+    cmd, out = receiver(tmp_path, code=3)
+    r = env.cli("dispatch", "--name", name, "--dir", tmp_path, "--once", "--handoff", cmd,
+                "--", sys.executable, "agent.py", timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert "handoff failed" in r.stdout and "no live holder for tag:demo" in r.stdout
+    assert "fake agent saw ['nobody holds the tag']" in r.stdout   # the fallback sees the claimed batch
+    assert env.items(name) == []
+
+
+def test_failed_handoff_without_fallback(env, alice, tmp_path):
+    dm = env.mock.add_dm(alice)
+    name = env.register({"dms": "all"})
+    env.mock.post(dm, "x", user=alice)
+    env.wait_items(name)
+    cmd, _ = receiver(tmp_path, code=7)
+    r = env.cli("dispatch", "--name", name, "--dir", tmp_path, "--once", "--handoff", cmd, check=False)
+    assert r.returncode == 1 and "no fallback command" in r.stdout
+
+
+def test_handoff_ok_codes_are_configurable(env, alice, tmp_path):
+    dm = env.mock.add_dm(alice)
+    name = env.register({"dms": "all"})
+    env.mock.post(dm, "queued", user=alice)
+    env.wait_items(name)
+    cmd, _ = receiver(tmp_path, code=8)
+    r = env.cli("dispatch", "--name", name, "--dir", tmp_path, "--once", "--handoff", cmd, check=False)
+    assert r.returncode == 0 and "handed off" in r.stdout   # 8 (queued) counts by default
+    env.mock.post(dm, "queued again", user=alice)
+    env.wait_items(name, n=2)
+    r = env.cli("dispatch", "--name", name, "--dir", tmp_path, "--once", "--handoff", cmd,
+                "--handoff-ok", "0", check=False)
+    assert r.returncode == 1 and "handoff failed" in r.stdout
+
+
+def test_unanswered_handoff_comes_back_after_its_lease(env, alice, tmp_path):
+    from conftest import until
+    dm = env.mock.add_dm(alice)
+    name = env.register({"dms": "all"})
+    cmd, out = receiver(tmp_path)
+    p = env.popen("dispatch", "--name", name, "--dir", tmp_path, "--handoff", cmd)
+    try:
+        env.mock.post(dm, "nobody answered", user=alice)
+        until(lambda: len(lines(out)) == 2, 20, "handed off again after the 1.5 s lease")
+        assert lines(out)[0] == lines(out)[1] == [["nobody answered"]]
+    finally:
+        p.terminate()
+        p.communicate(timeout=15)
+
+
+def test_handoff_sends_each_batch_once(make_env, tmp_path):
+    from conftest import until
+    env = make_env(config={"lease": 60})   # the shared test env's 1.5 s lease would redeliver
+    env.add_identity()
+    alice = env.mock.add_user("alice")
+    dm = env.mock.add_dm(alice)
+    name = env.register({"dms": "all"})
+    cmd, out = receiver(tmp_path)
+    p = env.popen("dispatch", "--name", name, "--dir", tmp_path, "--handoff", cmd)
+    try:
+        until(lambda: env.agent(name)["waiters"] == 1, what="dispatcher waiting")
+        # A new conversation's first read starts from "now": wait for it before posting.
+        until(lambda: env.db().execute("SELECT 1 FROM conv WHERE channel=? AND cursor IS NOT NULL",
+                                       (dm,)).fetchone(), 15, "first read")
+        env.mock.post(dm, "first", user=alice)
+        until(lambda: len(lines(out)) == 1, 20, "first handoff")
+        import time
+        # Still open (claimed), but the dispatcher must go back to waiting, not spin.
+        until(lambda: env.agent(name)["waiters"] == 1, what="dispatcher waiting again")
+        samples = []
+        for _ in range(20):
+            samples.append(env.agent(name)["waiters"])
+            time.sleep(0.1)
+        assert samples == [1] * 20, samples
+        assert len(lines(out)) == 1
+        env.mock.post(dm, "second", user=alice)
+        until(lambda: len(lines(out)) == 2, 20, "second handoff")
+        assert lines(out)[1] == [["second"]]   # only the new item
+        assert len(env.items(name)) == 2      # both still open until replied to
+    finally:
+        p.terminate()
+        p.communicate(timeout=15)

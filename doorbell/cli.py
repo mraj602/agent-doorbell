@@ -191,6 +191,12 @@ def build_parser():
     ds.add_argument("--dir", default=".", help="agent folder to run the command in")
     ds.add_argument("--timeout", type=float, default=900, help="seconds before a run is killed")
     ds.add_argument("--once", action="store_true", help="handle one batch and exit")
+    ds.add_argument("--handoff", metavar="CMD",
+                    help="first hand each new batch (JSON on stdin) to this shell command, e.g. "
+                         "'wy peers send tag:slack-orchestrator --one --stdin'; the command after -- "
+                         "runs only when the handoff fails")
+    ds.add_argument("--handoff-ok", default="0,8", metavar="CODES",
+                    help="exit codes of --handoff that mean handed off (default 0,8)")
     ds.add_argument("command", nargs=argparse.REMAINDER, help="-- then the command to run")
 
     sv = sp.add_parser("service", help="install the daemon (and optionally a dispatcher) as a user service")
@@ -281,8 +287,9 @@ def run(args):
         return init_agent(args.dir, name=args.name, owner=args.owner, force=args.force)
     if c == "dispatch":
         from .runner import dispatch
+        ok = {int(c) for c in args.handoff_ok.split(",") if c.strip()}
         return dispatch(agent_name_in(args.dir, args), strip_dashes(args.command), args.dir,
-                        args.timeout, args.once)
+                        args.timeout, args.once, handoff=args.handoff, handoff_ok=ok)
     if c == "service":
         from .service import service
         return service(args.action, args.dispatch, args.dir, strip_dashes(args.command))
@@ -507,11 +514,12 @@ def agent_name_in(folder, args):
     raise SystemExit(f"error: pass --name or point --dir at a folder with a .doorbell-agent file")
 
 
-def wait(name):
-    """Block until there is work. Survives daemon restarts instead of waking the agent with an error."""
+def wait(name, new_only=False):
+    """Block until there is work. Survives daemon restarts instead of waking the agent with an error.
+    new_only: wake for new (pending) items only, not for claimed ones still open."""
     while True:
         try:
-            return call("wait", name=name)
+            return call("wait", name=name, **({"new_only": True} if new_only else {}))
         except DaemonDown:
             time.sleep(3)
 

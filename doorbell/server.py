@@ -195,7 +195,9 @@ async def op_wait(d, reader, req):
             if not d.q1("SELECT 1 FROM agents WHERE id=?", aid):
                 return {"deregistered": True}
             pending, claimed = open_counts(d, aid)
-            if pending or claimed:
+            # new_only: items already claimed (handed off, leased) don't wake; they come back as
+            # pending if their lease runs out.
+            if pending or (claimed and not req.get("new_only")):
                 return {"pending": pending, "unresolved": claimed}
             ev.clear()
             got = asyncio.ensure_future(ev.wait())
@@ -268,10 +270,16 @@ async def render_item(d, a, it):
 
 async def op_inbox(d, req):
     a = await d.touch(req["name"])
+    new = None
+    if req.get("claim") and req.get("only_new"):
+        # Just the items this call claims (for handing a batch off exactly once).
+        new = {r["seq"] for r in d.q("SELECT seq FROM items WHERE agent_id=? AND state='pending'", a["id"])}
     if req.get("claim"):
         d.db.execute("UPDATE items SET state='claimed', attempts=attempts+1, lease_until=?, updated_at=? "
                      "WHERE agent_id=? AND state='pending'", (time.time() + d.cfg["lease"], time.time(), a["id"]))
     rows = d.q("SELECT * FROM items WHERE agent_id=? AND state IN ('pending','claimed') ORDER BY seq", a["id"])
+    if new is not None:
+        rows = [r for r in rows if r["seq"] in new]
     return {"agent": a["name"], "items": [await render_item(d, a, it) for it in rows]}
 
 

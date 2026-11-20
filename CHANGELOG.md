@@ -6,6 +6,15 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `doorbell dispatch --handoff CMD`: hand each new batch (JSON on stdin) to a session that is
+  already running, for example through Watchyard (`wy peers send tag:<tag> --one --stdin`),
+  and run the usual command only when the handoff fails (`--handoff-ok`, default `0,8`). A
+  handed-off batch is sent once and stays claimed until it is resolved or its lease runs out.
+- `doorbell inbox --claim` can return only the items it just claimed, and `wait` can wake for
+  new items only (used by `--handoff`).
+
 ### Changed
 
 - Project page: describes every feature and the logic in plain terms (watching, agents,
