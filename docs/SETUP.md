@@ -455,6 +455,13 @@ doorbell dispatch --name main --dir ~/doorbell-agents/main \
   post a reply in Slack for every item it handles (a draft doesn't resolve it).
 - The batch carries message text. Where it goes is up to the handoff command; Watchyard sends
   it through its hub when the session is on another machine.
+- `wy peers send` works only from inside a Claude Code session (it refuses with
+  `not_a_session`, exit 4, otherwise). So for the handoff to happen, start the dispatcher from
+  a Claude Code session (for example in the background from its terminal tool). A dispatcher
+  run as a service, from cron or from a plain terminal always falls back to the command after
+  `--`, which still handles every message.
+- Use `--one` to reach one holder of the tag. Without it every holder gets the batch, and they
+  have to agree among themselves who replies.
 
 **Check:** `doorbell status` shows your agent with `"status": "active"` and `"waiters": 1`,
 and `"state": "POLLING"`. `poll_set` lists the conversations being watched. If you see

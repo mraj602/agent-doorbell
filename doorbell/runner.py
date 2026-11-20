@@ -73,13 +73,14 @@ def hand_off(name, handoff, folder, env, timeout, ok):
                            encoding="utf-8", capture_output=True, timeout=min(timeout, 120))
         # The command's own one-line account (wy prints "delivered to ..." or the refusal on
         # stdout); stderr when stdout is empty.
-        rc, said = r.returncode, (r.stdout.strip() or r.stderr.strip()).splitlines()
+        rc, said = r.returncode, [x for x in (r.stdout.strip() or r.stderr.strip()).splitlines() if x.strip()]
     except subprocess.TimeoutExpired:
         rc, said = "timeout", []
+    said = "; ".join(said[-5:])   # a broadcast prints one line per receiver
     if rc in ok:
-        log(f"handed off {seqs} ({len(payload)} bytes, exit {rc}){': ' + said[-1] if said else ''}")
+        log(f"handed off {seqs} ({len(payload)} bytes, exit {rc}){': ' + said if said else ''}")
         return "handed"
-    log(f"handoff failed for {seqs} (exit {rc}){': ' + said[-1] if said else ''}")
+    log(f"handoff failed for {seqs} (exit {rc}){': ' + said if said else ''}")
     return "failed"
 
 
