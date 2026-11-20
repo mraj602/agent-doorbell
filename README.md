@@ -154,17 +154,17 @@ Or let Doorbell hold the send policy: give the agent only `Bash(doorbell *)`; it
 
 Facts from [docs/COMPARISON.md](docs/COMPARISON.md), researched in November 2026 from each
 project's own docs. Products change quickly, so check the linked docs there before you rely on
-a detail. "Not stated" means the vendor's docs don't say.
+a detail. "—" means the vendor's docs don't say.
 
 | | Agent Doorbell | OpenClaw, Hermes Agent (self-hosted Socket Mode bots) | Claude in Slack, Cursor, Devin, ChatGPT, Copilot (hosted bots) | Slack MCP / agent's own Slack tool on a timer | n8n, Zapier, Make |
 |---|---|---|---|---|---|
 | How it hears about messages | Polling with cursors | Socket Mode WebSocket | Events API into the vendor's cloud | On demand: the agent decides to look | n8n: Events API; Zapier: mostly instant webhook; Make: polling (15 min by default) |
-| Tokens while idle | **Zero** (no API calls when no agent listens) | Zero per message (OpenClaw has an optional 30-minute proactive job) | Usage-billed | A model turn per check, all day | Per workflow run, task or credit |
+| Tokens while idle | **Zero** (no API calls when no agent listens) | Zero (OpenClaw has an optional 30-minute proactive job) | Zero; billed per use | A model turn per check, all day | Per workflow run, task or credit |
 | Misses messages while down | **No**, it catches up | Yes (no catch-up documented) | No (vendor cloud) | Not watched at all | n8n: after the retry window; Zapier: no (cloud); Make: likely caught up |
 | Replies as | **You**, or drafts for you ("Sent using @Claude" if the agent uses the Slack MCP) | A bot (OpenClaw can use a user token) | Their bot app | You, with a "Sent using @Claude" footer that can't be turned off | Bot or user token; Zapier: the Zapier app |
 | Needs a public URL or server | **No**, a local daemon | No | No | No | n8n (self-hosted): yes; Zapier and Make: no, they run in the cloud |
-| Free Slack plan | **Yes** (one of the 10 app slots) | Not stated | Devin: yes; the earlier Claude in Slack app needs paid Slack; others not stated | Plan support unclear | Uses an app slot; Zapier: 100 tasks a month free |
-| Works with your local repos and tools | **Yes** | They run on your machine | No, they run in the vendor's cloud | Yes, it is your own agent | Not stated |
+| Free Slack plan | **Yes** (one of the 10 app slots) | — | Devin: yes; the earlier Claude in Slack app needs paid Slack; others — | Plan support unclear | Uses an app slot; Zapier: 100 tasks a month free |
+| Works with your local repos and tools | **Yes** | Yes, they run on your machine | No, they run in the vendor's cloud | Yes, it is your own agent | — |
 | Routes to several of your own agents | **Yes**, a subscription and queue per agent | OpenClaw: yes ("bindings"); Hermes: limited | No | No | Workflow branches, paths or routers |
 
 Most self-hosted Slack agents (OpenClaw, Hermes Agent, Claude Code Slack bots) keep a Socket
