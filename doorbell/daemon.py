@@ -1,4 +1,7 @@
-"""doorbelld: polls Slack only for registered, live agents and queues matching messages per agent.
+"""doorbelld: watches Slack only for registered, live agents and queues matching messages per agent.
+
+How it finds new messages (history polling, search sweeps or Socket Mode) is in detect.py and
+docs/design/detection.md.
 
 The daemon never posts to Slack and never calls an LLM. Agents collect their queue over the
 local TCP connection (see server.py) and reply through their own Slack tools.
@@ -19,7 +22,7 @@ import sys
 import time
 from collections import deque
 
-from . import config, oauth, store
+from . import config, detect, oauth, store
 from .slackapi import RateLimited, Slack, SlackError, read_creds, read_token
 
 LIVE = ("active", "detached")
@@ -34,7 +37,7 @@ class Daemon:
         self.waiters = {}          # agent_id -> number of connected `wait` clients
         self.events = {}           # agent_id -> asyncio.Event
         self.calls = deque()       # timestamps of recent API calls (rate bucket)
-        self.pause_until = 0
+        self.pause_until = {}      # method -> time: Slack's limits (and Retry-After) are per method
         self.slacks = {}
         self.unlocked = {}   # identity -> (sender token, grant key); memory only, gone on restart
         self.sealed_keys = {}  # identity -> (encryption key, credentials) while unlocked, for renewal
@@ -52,7 +55,17 @@ class Daemon:
         self.polling = set()       # (identity, channel) currently in the poll set
         self.started = time.time()
         self.api_total = 0
-        self.budget_interval = {}  # identity -> seconds needed to poll its whole set within ~75% of the budget
+        self.budget_interval = {}  # identity -> seconds needed to poll its whole set within its share
+        self.chans = {}            # identity -> conversations in the poll set
+        self.modes = {}            # identity -> (mode, why); see detect.choose
+        self.next_sweep = {}       # identity -> time of the next search sweep
+        self.sweep_slow = {}       # identity -> sweep slow-down factor after rate limits (1..8)
+        self.last_sweep = {}
+        self.verify = {}           # identity -> {(channel, ts): lo} search matches to confirm
+        self.sockets = {}          # identity -> detect.SocketRunner
+        self.search_ok = {}        # identity -> last known "token has search:read" (see detect.has_search)
+        self.no_search = {}        # identity -> the Slack client that got missing_scope from search
+        self.cfg_mtime = self.config_stamp()
 
     # ---------- small helpers ----------
     def q(self, sql, *a):
@@ -180,8 +193,8 @@ class Daemon:
     async def api(self, identity, method, **params):
         while True:
             now = time.time()
-            if now < self.pause_until:
-                await asyncio.sleep(self.pause_until - now)
+            if now < self.pause_until.get(method, 0):
+                await asyncio.sleep(self.pause_until[method] - now)
                 continue
             while self.calls and self.calls[0] < now - 60:
                 self.calls.popleft()
@@ -197,7 +210,8 @@ class Daemon:
             self.check_file_scopes(identity, sl)
             return d
         except RateLimited as e:
-            self.pause_until = time.time() + e.retry_after
+            self.pause_until[method] = time.time() + e.retry_after
+            store.audit(self.db, "rate_limited", method=method, retry_after=e.retry_after)
             self.db.execute("INSERT INTO api_calls VALUES(?,?,0)", (time.time(), method))
             raise
         except SlackError as e:
@@ -205,6 +219,11 @@ class Daemon:
             if e.error == "token_expired":
                 self.force_renew.add(identity)
                 self.slacks.pop(identity, None)
+            elif e.error == "missing_scope" and method == "search.messages":
+                # Optional scope: fall back to history polling instead of stopping the identity.
+                self.no_search[identity] = self.slacks.get(identity)
+                self.search_ok[identity] = False
+                store.audit(self.db, "search_scope_missing", identity=identity)
             elif e.error in FATAL_ERRORS:
                 self.db.execute("UPDATE identities SET status='broken', error=? WHERE user_id=?",
                                 (str(e), identity))
@@ -354,15 +373,16 @@ class Daemon:
         return out
 
     # ---------- polling ----------
-    def cadence(self, last_activity, identity=None):
-        """Every followed conversation is polled at cadence_hot while the rate budget allows it.
-        Only when the poll set is too big for the budget do quieter conversations slow down."""
-        age = time.time() - (last_activity or 0)
-        if age < 3600:
+    def cadence(self, hot_until, identity=None):
+        """Seconds to the next read of a conversation or thread. Hot (something new in the last
+        hot_for seconds): cadence_hot. Idle: cadence_warm in history mode, stretched when the
+        watch list is bigger than this person's share; not at all in search and socket mode,
+        where a sweep or an event makes it hot again."""
+        if (hot_until or 0) > time.time():
             return self.cfg["cadence_hot"]
-        fits = self.budget_interval.get(identity, 0)
-        base = self.cfg["cadence_warm"] if age < 86400 else self.cfg["cadence_cold"]
-        return min(base, max(self.cfg["cadence_hot"], fits))
+        if self.modes.get(identity, ("history",))[0] != "history":
+            return detect.FAR
+        return max(self.cfg["cadence_warm"], self.budget_interval.get(identity, 0))
 
     def upsert_watch(self, identity, ch, parent_ts, watermark, mine=0):
         exp = time.time() + self.cfg["thread_watch_days"] * 86400
@@ -387,7 +407,7 @@ class Daemon:
             latest = window[0]["ts"] if window else store.ts_now()
             act = float(window[0]["ts"]) if window else 0
             self.db.execute("UPDATE conv SET cursor=?, last_activity=?, next_poll=? WHERE identity=? AND channel=?",
-                            (latest, act, now + self.cadence(act, identity), identity, ch))
+                            (latest, act, now + self.cadence(c["hot_until"], identity), identity, ch))
             return
         cursor = c["cursor"]
         new = [m for m in window if m["ts"] > cursor]
@@ -413,26 +433,33 @@ class Daemon:
                 replies += [x for x in r.get("messages", []) if x["ts"] > wm and x["ts"] != m["ts"]]
             mine = int(m.get("user") == identity or identity in (m.get("reply_users") or []))
             self.upsert_watch(identity, ch, m["ts"], lr, mine)
-            self.db.execute("UPDATE thread_watch SET next_poll=? WHERE identity=? AND channel=? AND parent_ts=?",
-                            (now + self.cfg["thread_watch_every"], identity, ch, m["ts"]))
+            self.db.execute("UPDATE thread_watch SET next_poll=max(next_poll, ?) WHERE identity=? AND channel=? "
+                            "AND parent_ts=?", (now + self.cfg["thread_watch_every"], identity, ch, m["ts"]))
         for m in sorted(new + replies, key=lambda m: m["ts"]):
             await self.ingest(identity, ch, m)
+        hot_until = c["hot_until"] or 0
         if new or replies:
             newest = max(m["ts"] for m in new + replies)
             cursor = max(cursor, max((m["ts"] for m in new), default=cursor))
             act = max(c["last_activity"] or 0, float(newest))
+            hot_until = now + self.cfg["hot_for"]
         else:
             act = c["last_activity"] or 0
-        self.db.execute("UPDATE conv SET cursor=?, last_activity=?, next_poll=? WHERE identity=? AND channel=?",
-                        (cursor, act, now + self.cadence(act, identity), identity, ch))
+        self.db.execute("UPDATE conv SET cursor=?, last_activity=?, hot_until=?, next_poll=? WHERE identity=? "
+                        "AND channel=?", (cursor, act, hot_until, now + self.cadence(hot_until, identity), identity, ch))
 
     async def poll_watched_threads(self, identity, chans):
-        """Threads I'm in (or an agent is handling) that have scrolled out of the history window."""
+        """Threads I'm in (or an agent is handling) that have scrolled out of the history window, in
+        history mode; in search and socket mode only threads a sweep made hot."""
         now = time.time()
-        rows = self.q("SELECT * FROM thread_watch WHERE identity=? AND mine>0 AND next_poll<=? AND expires>?",
-                      identity, now, now)
+        if self.modes.get(identity, ("history",))[0] == "history":
+            rows = self.q("SELECT * FROM thread_watch WHERE identity=? AND (mine>0 OR hot_until>?) AND next_poll<=? "
+                          "AND expires>?", identity, now, now, now)
+        else:
+            rows = self.q("SELECT * FROM thread_watch WHERE identity=? AND hot_until>? AND next_poll<=? AND expires>?",
+                          identity, now, now, now)
         for w in rows:
-            if w["channel"] not in chans:
+            if w["channel"] not in chans and not (w["hot_until"] or 0) > now:
                 continue
             r = await self.api(identity, "conversations.replies", channel=w["channel"], ts=w["parent_ts"],
                                oldest=w["watermark"] or w["parent_ts"], limit=200)
@@ -441,9 +468,11 @@ class Daemon:
             for m in sorted(new, key=lambda m: m["ts"]):
                 await self.ingest(identity, w["channel"], m)
             wm = max([w["watermark"] or ""] + [m["ts"] for m in new])
-            self.db.execute("UPDATE thread_watch SET watermark=?, next_poll=? WHERE identity=? AND channel=? "
-                            "AND parent_ts=?", (wm, now + self.cfg["thread_watch_every"], identity,
-                                                w["channel"], w["parent_ts"]))
+            hot_until = now + self.cfg["hot_for"] if new else (w["hot_until"] or 0)
+            nxt = self.cfg["cadence_hot"] if hot_until > now else self.cfg["thread_watch_every"]
+            self.db.execute("UPDATE thread_watch SET watermark=?, hot_until=?, next_poll=? WHERE identity=? "
+                            "AND channel=? AND parent_ts=?", (wm, hot_until, now + nxt, identity,
+                                                              w["channel"], w["parent_ts"]))
 
     # ---------- routing ----------
     @staticmethod
@@ -665,27 +694,123 @@ class Daemon:
             if time.time() - self.last_convlist.get(ident, 0) > self.cfg["convlist_every"]:
                 await self.refresh_convlist(ident)
             chans = await self.poll_set(ident, agents)
-            self.budget_interval[ident] = len(chans) * 60 / (self.cfg["rate_per_min"] * 0.75)
+            self.chans[ident] = chans
+            self.budget_interval[ident] = detect.history_cost(self, ident, chans) * self.cfg["cadence_warm"] \
+                / max(1e-9, detect.history_share(self))
+            if detect.state(self, ident)["socket"] == "on":
+                self.sockets.setdefault(ident, detect.SocketRunner(self, ident)).start()
+            mode, why = detect.choose(self, ident, chans)
+            if self.modes.get(ident, (None,))[0] != mode:
+                self.switch_mode(ident, mode, why, chans)
+            self.modes[ident] = (mode, why)
             max_catchup = max(a["max_catchup"] for a in agents)
             for ch in chans:
                 if (ident, ch) not in self.polling:
                     floor = f"{time.time() - max_catchup:.6f}"
-                    self.db.execute("UPDATE conv SET cursor=?, next_poll=0 WHERE identity=? AND channel=? "
+                    self.db.execute("UPDATE conv SET cursor=? WHERE identity=? AND channel=? "
                                     "AND cursor IS NOT NULL AND cursor < ?", (floor, ident, ch, floor))
-                    self.db.execute("UPDATE conv SET next_poll=0 WHERE identity=? AND channel=?", (ident, ch))
+                    if mode == "history":
+                        self.db.execute("UPDATE conv SET next_poll=0 WHERE identity=? AND channel=?", (ident, ch))
+                    else:   # a sweep or an event says when to read it; start reading from now
+                        self.db.execute("UPDATE conv SET cursor=? WHERE identity=? AND channel=? AND cursor IS NULL",
+                                        (store.ts_now(), ident, ch))
                 now_set.add((ident, ch))
             self.polling = {p for p in self.polling if p[0] != ident} | {(ident, ch) for ch in chans}
+            if mode != "history" and time.time() >= self.next_sweep.get(ident, 0):
+                await self.run_sweep(ident)
             due = self.q("SELECT channel FROM conv WHERE identity=? AND next_poll<=? ORDER BY next_poll",
                          ident, time.time())
             for r in due:
                 if r["channel"] in chans:
                     await self.poll_conv(ident, r["channel"])
             await self.poll_watched_threads(ident, chans)
+            if self.verify.get(ident):
+                await detect.verify(self, ident)
         self.polling &= now_set
+
+    async def run_sweep(self, ident):
+        """Catch up in search or socket mode: a search sweep, or (Socket Mode without the
+        search:read scope) one read of every watched conversation from its cursor."""
+        if detect.has_search(self, ident):
+            try:
+                await detect.sweep(self, ident)
+            except RateLimited:
+                pass   # sweep() already slowed itself
+            except Exception as e:
+                store.audit(self.db, "sweep_error", identity=ident, error=repr(e))
+                self.next_sweep[ident] = time.time() + detect.sweep_interval(self)
+        else:
+            detect.read_all_from_cursors(self, ident, "Socket Mode catch-up without the search:read scope")
+            self.db.execute("UPDATE detect_state SET sweep_wm=? WHERE identity=?", (time.time(), ident))
+            self.next_sweep[ident] = time.time() + self.cfg["socket_sweep_every"]
+
+    def switch_mode(self, ident, mode, why, chans):
+        old = self.modes.get(ident, (None,))[0]
+        store.audit(self.db, "detect_mode", identity=ident, mode=mode, previous=old, why=why)
+        if mode == "history" and old in ("search", "socket"):
+            # Read every watched conversation once from where it was last read, then on cadence.
+            self.db.execute("UPDATE conv SET next_poll=0 WHERE identity=?", (ident,))
+        elif mode in ("search", "socket"):
+            if not detect.state(self, ident)["sweep_wm"]:
+                if old == "history":
+                    # History polling covered everything up to about one idle cadence ago.
+                    start = time.time() - max(self.cfg["cadence_warm"], self.budget_interval.get(ident, 0))
+                else:
+                    start = time.time()
+                    if self.q1("SELECT 1 FROM conv WHERE identity=? AND cursor IS NOT NULL", ident):
+                        # Read before (by an older version, or history mode before a restart) but
+                        # never swept: read each conversation from its cursor once.
+                        detect.read_all_from_cursors(self, ident, "first sweep after earlier history polling")
+                self.db.execute("UPDATE detect_state SET sweep_wm=? WHERE identity=?", (start, ident))
+            self.db.execute("UPDATE conv SET next_poll=? WHERE identity=? AND hot_until<=?",
+                            (time.time() + detect.FAR, ident, time.time()))
+            self.next_sweep[ident] = 0
+
+    async def on_event(self, ident, ev):
+        """A message event from Socket Mode: route it like a polled message, with no API call
+        unless the conversation is new to Doorbell."""
+        ch, ts = ev.get("channel"), ev.get("ts")
+        if not ch or not ts:
+            return
+        if not self.q1("SELECT 1 FROM conv WHERE identity=? AND channel=?", ident, ch) and \
+                time.time() - self.last_convlist.get(ident, 0) > 30:
+            await self.refresh_convlist(ident)
+            self.chans[ident] = await self.poll_set(ident, self.live_agents(ident))
+        m = {k: v for k, v in ev.items() if k not in ("channel", "channel_type", "event_ts")}
+        mention = f"<@{ident}>" in (m.get("text") or "")
+        parent = m.get("thread_ts") if m.get("thread_ts") != ts else None
+        watched_thread = parent and self.q1("SELECT 1 FROM thread_watch WHERE identity=? AND channel=? AND "
+                                            "parent_ts=? AND mine>0", ident, ch, parent)
+        if ch not in self.chans.get(ident, set()) and not mention and not watched_thread:
+            return   # not watched by any agent: not stored
+        await self.ingest(ident, ch, m)
+        if not parent:
+            self.db.execute("UPDATE conv SET cursor=max(cursor, ?), last_activity=max(last_activity, ?) "
+                            "WHERE identity=? AND channel=? AND cursor IS NOT NULL", (ts, float(ts), ident, ch))
+
+    @staticmethod
+    def config_stamp():
+        try:
+            st = config.CONFIG_FILE.stat()
+            return (st.st_mtime_ns, st.st_size)
+        except FileNotFoundError:
+            return None
+
+    def reload_config(self):
+        """Pick up config.yaml edits (e.g. `doorbell config set team_size 30`) without a restart."""
+        mtime = self.config_stamp()
+        if mtime != self.cfg_mtime:
+            self.cfg_mtime = mtime
+            try:
+                self.cfg = config.load()
+                store.audit(self.db, "config_reloaded")
+            except Exception as e:
+                store.audit(self.db, "config_error", error=repr(e))
 
     async def lifecycle_loop(self):
         while True:
             try:
+                self.reload_config()
                 self.lifecycle()
                 await self.renew()
             except Exception as e:

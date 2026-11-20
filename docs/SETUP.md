@@ -143,6 +143,44 @@ shows your identity with `"token": "ok"` and `"missing_scopes": []`.
 **Check (layout B):** `doorbell status` shows your identity with `"mode": "sealed"` and
 `"status": "ok"`, and `"sending"` with `"unlocked": true`.
 
+### Instant delivery, big watch lists and teams
+
+How Doorbell finds new messages depends on your Slack app. Pick the row that fits; the full
+reasoning and numbers are in [design/detection.md](design/detection.md).
+
+| Your situation | Do this | Result |
+|---|---|---|
+| **The Slack app is yours alone** (a paid plan, or a free one with fewer than 10 apps) | Create it from [`slack-app-manifest-personal.yaml`](../slack-app-manifest-personal.yaml), sign in with `doorbell login --search`, then [turn on Socket Mode](#socket-mode-your-own-app) | Messages arrive in under a second, about zero API calls |
+| **A team shares one app** | `doorbell login --search`, then `doorbell config set team_size <people on the app>` | Doorbell reads each watched conversation while the list is short, and switches to one search call every 2 minutes for everything when it isn't |
+| **The app has no `search:read`**, or you are a guest | Plain `doorbell login` | Each watched conversation is read every 2 minutes (30 s while active). Keep watch lists short |
+
+`--search` asks Slack for `search:read` too; the app must list that scope (the manifests do).
+To make it the default: `doorbell config set login_search true`. Whatever you pick, `doorbell
+status` shows `detection.mode` and why.
+
+#### Socket Mode (your own app)
+
+Never on a shared app: Slack hands each event to one open connection, so your messages could
+reach a colleague's Doorbell and theirs yours. On your own app:
+
+1. In the app's settings, **Basic Information → App-Level Tokens → Generate Token and Scopes**:
+   any name, scope `connections:write`. Save the `xapp-...` token in a file only you can read,
+   e.g. `~/.config/doorbell-app-token` (`chmod 600`). Don't paste it into a chat.
+2. Run:
+
+   ```bash
+   doorbell socket enable --app-token-file ~/.config/doorbell-app-token --only-me
+   ```
+
+**Check:** with an agent live, `doorbell status` shows `"mode": "socket"` and
+`"socket": {"setting": "on", "connected": true}`. If Doorbell ever sees a second connection or an
+event for someone else, it turns Socket Mode off (`"setting": "tripped"` with the reason), alerts
+you, and keeps watching by polling. `doorbell socket disable` turns it off by hand.
+
+Sign in with `doorbell login --search` on this app too: on every connect Doorbell catches up on
+missed time with one search call. Without `search:read` it reads each watched conversation once
+instead, which costs more calls for long watch lists.
+
 ### Why a read-only sign-in can return a token that can post
 
 Slack adds up the scopes one person has approved for one app, across **all** of that person's
@@ -462,7 +500,7 @@ watcher recognises those replies as the agent's, not yours.
 
 | Command | What it does |
 |---|---|
-| `doorbell status` | DORMANT or POLLING, agents and their states, poll set, API usage, stuck items |
+| `doorbell status` | DORMANT or POLLING, how messages are found (`detection`), agents and their states, poll set, API usage, stuck items |
 | `doorbell log --since 3600` | Audit trail for the last hour: deliveries, resolutions, subscription changes |
 | `doorbell inbox` | What's queued for the agent in this folder |
 | `doorbell sub add users @someone --why "..."` | Listen to someone else too (the agent can do this as well; you get a notification) |
@@ -609,12 +647,18 @@ Options that apply to the agent rather than to what it hears are flags on
 Optional. `config.yaml` in the state folder overrides defaults from
 [`doorbell/config.py`](../doorbell/config.py); unknown keys are rejected. The state folder is
 `~/.local/state/doorbell` on Linux and macOS, `%LOCALAPPDATA%\doorbell` on Windows, or
-`$DOORBELL_HOME` if set. Restart the daemon after changes (`doorbell service install` again
-does that). Common keys:
+`$DOORBELL_HOME` if set. `doorbell config set <key> <value>` edits it safely (it checks the key
+and the value), `doorbell config get` shows every setting, and the running daemon picks up
+changes within seconds. Common keys:
 
 ```yaml
 agent_app_ids: ["A08SF47R6P4"]  # apps whose posts "as you" count as agent replies
-cadence_hot: 30                 # seconds between polls of an active conversation
+detect: auto                    # auto | history | search | socket (docs/design/detection.md)
+team_size: 1                    # people who sign in to the same Slack app (sets your fair share)
+login_search: false             # `doorbell login` also asks for search:read
+cadence_hot: 30                 # seconds between reads of an active (hot) conversation
+cadence_warm: 120               # seconds between reads of an idle one (history mode)
+sweep_every: 120                # seconds between search sweeps (search mode)
 idle_ttl: 21600                 # seconds without contact before an agent goes inactive
 lease: 900                      # seconds an agent has to resolve a claimed item
 max_attempts: 3                 # deliveries before an item is marked stuck
@@ -696,6 +740,11 @@ If you are an AI agent following this guide for a user:
   terminal.
 - If the person has no Client ID, send them to [ORG-SETUP.md](ORG-SETUP.md). Recommend a
   read-only sign-in (layout A) unless they want Doorbell to send replies.
+- **Pick how messages are found** with [the table above](#instant-delivery-big-watch-lists-and-teams):
+  ask whether the Slack app is theirs alone or shared, and how many people sign in to it. Only
+  turn on Socket Mode after the person confirms the app is theirs alone; they create the
+  app-level token and save it in a file themselves. You may run `doorbell socket enable` with
+  their file path and `--only-me` once they have said so, and `doorbell config set team_size N`.
 - **Step 6 is the user's decision.** Ask which level they want (recommend draft or triage),
   and which agent CLI runs the agent. Don't change their harness's permission settings
   yourself; show them the flags and let them choose. Fill in `AGENTS.md` with them: ask who

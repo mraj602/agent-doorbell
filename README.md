@@ -12,7 +12,7 @@ needs them.**
 
 An AI agent that "watches Slack" usually does it by checking: every few minutes it spends a
 model turn to find out that nothing happened. Agent Doorbell moves the watching into a tiny
-local daemon with no LLM. It polls Slack with a read-only token, queues the messages meant for
+local daemon with no LLM. It watches Slack with a read-only token, queues the messages meant for
 you, and rings the agent (Claude Code, Codex, Gemini CLI or your own) only when there is
 something to handle. **Zero tokens while nobody is calling.**
 
@@ -140,8 +140,9 @@ Or let Doorbell hold the send policy: give the agent only `Bash(doorbell *)`; it
 Most self-hosted Slack agents (OpenClaw, Hermes Agent, Claude Code Slack bots) keep a Socket
 Mode WebSocket open and lose messages sent while it's down; hosted bots (Claude in Slack,
 Cursor, Devin) don't miss, but answer as a bot in their cloud, usually on paid plans.
-Doorbell polls with cursors, so it catches up after downtime, with no public URL, on any
-Slack plan.
+Doorbell catches up after downtime, with no public URL, on any Slack plan: it uses Socket Mode
+when the Slack app is yours alone (instant), and otherwise polls, with one search call covering
+every conversation when the watch list is big ([how it finds messages](docs/design/detection.md)).
 
 **Use it** for an always-on watcher that never misses a message, a coordinator agent that
 routes to project agents, free Slack workspaces without webhooks, and replies that look like
@@ -156,13 +157,15 @@ The full comparison of about 20 tools, use cases and sources is in
 - [Slack app setup for a workspace](docs/ORG-SETUP.md): for admins; the app, PKCE, scope accumulation, sharing the Client ID
 - [Compared with other tools](docs/COMPARISON.md): when to use it and when not, use cases
 - [Architecture](docs/ARCHITECTURE.md): design, queue and acks, security model
+- [How it finds new messages](docs/design/detection.md): Socket Mode, search, history; Slack's limits, measurements, choosing a setup
 - [Running agents for days](docs/RUNNING.md): live sessions vs headless dispatch, Claude Code limits
 - [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
 ## Status and limits
 
-Runs on Linux, macOS and Windows. One person per daemon. Replies arrive
-within about 30 seconds, not instantly. See
+Runs on Linux, macOS and Windows. One person per daemon. Messages reach the agent in under a
+second with Socket Mode on your own Slack app; when polling, within about 30 seconds for active
+conversations and about 2 minutes for quiet ones. See
 [Limits and known gaps](docs/ARCHITECTURE.md#14-limits-and-known-gaps).
 
 ## License

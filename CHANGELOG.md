@@ -6,7 +6,48 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Three ways to find new messages, chosen per person (`detect: auto`, see
+  [docs/design/detection.md](docs/design/detection.md)):
+  - **Socket Mode** for a Slack app only you use: Slack pushes each message (under a second,
+    about zero API calls). `doorbell socket enable --app-token-file <file> --only-me`. A search
+    sweep (or, without `search:read`, one history read per conversation) catches up on every
+    connect and every 15 minutes. Dead connections are found by ping within 90 s. New manifest
+    `slack-app-manifest-personal.yaml`.
+  - **Search sweeps:** one `search.messages` call every 2 minutes covers every conversation and
+    thread you're in; the conversation it points at is then read in full. Used when the watch
+    list is too big for your share of the app's limits. Needs `search:read`
+    (`doorbell login --search`; the manifests now list the scope).
+  - **History polling** as before, for short watch lists or without the search scope.
+- `team_size`: how many people sign in to the same Slack app. Each person's Doorbell plans on a
+  fair share of Slack's per-app limits and spaces its sweeps to match.
+- Mentions of you in conversations no agent watches are found by search sweeps.
+- `doorbell config get|set|unset`: edits `config.yaml` with checks; the daemon reloads it
+  without a restart. `config.yaml` is now checked for types and ranges when it loads.
+- `doorbell status` shows `detection`: the mode and why, sweep interval and slowdown, hot
+  conversations and threads, Socket Mode state.
+- A small WebSocket client in the standard library (`doorbell/wsclient.py`), so Socket Mode adds
+  no dependency.
+
+### Security
+
+- Socket Mode turns itself off (desktop alert, audit entry) when Slack reports a second open
+  connection on two connects in a row, or delivers an event that isn't authorized for you alone.
+  That event is dropped unread, isn't stored and isn't acknowledged. Watching continues by polling. Socket Mode stays closed
+  while no agent is live.
+
 ### Changed
+
+- Cadence: a conversation or thread is hot (read every 30 s) from new activity until nothing
+  new has arrived for 2 minutes (`hot_for`); idle ones are read every 2 minutes in history mode
+  and not at all in search and Socket Mode, where a sweep or an event wakes them.
+  `cadence_cold` is no longer used.
+- Rate limits are tracked per Slack method: a rate-limited search doesn't pause history reads.
+  Rate-limited sweeps slow down (up to 8×) and speed up again.
+- A sweep that can't vouch for a gap (more matches than its page cap, or the first sweep after
+  history polling or a restart) is followed by one read of each watched conversation from its
+  cursor, so nothing is skipped.
 
 - Project page: describes every feature and the logic in plain terms (watching, agents,
   replying, sign-in, the three Slack app layouts, the security model, when not to use it),
@@ -186,6 +227,7 @@ never posts. Everything below is new.
 - `doorbell doctor` to check the setup.
 - A Slack app manifest (`slack-app-manifest.yaml`) that requests read-only user token scopes.
 
-[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/mraj602/agent-doorbell/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mraj602/agent-doorbell/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mraj602/agent-doorbell/releases/tag/v0.1.0

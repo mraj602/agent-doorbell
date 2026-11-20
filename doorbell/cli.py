@@ -1,6 +1,7 @@
 """doorbell CLI: talks to doorbelld over 127.0.0.1 with the access key in endpoint.json. Also hosts the Claude Code hooks."""
 import argparse
 import json
+import os
 import socket
 import sys
 import time
@@ -138,6 +139,9 @@ def build_parser():
                     help="a localhost redirect URL registered on the app (default http://localhost:8765/doorbell/callback)")
     lg.add_argument("--team", help="Slack workspace ID, to skip the workspace picker")
     lg.add_argument("--no-browser", action="store_true", help="only print the link")
+    lg.add_argument("--search", action="store_true", default=None,
+                    help="also ask for search:read (the app must list it), so one search call can cover every "
+                         "conversation; default: login_search in config.yaml")
     lg.add_argument("--timeout", type=float, default=300, help="seconds to wait for the sign-in")
 
     lo = sp.add_parser("logout", help="sign out: revoke Doorbell's Slack tokens and forget them")
@@ -198,6 +202,19 @@ def build_parser():
     sv.add_argument("--dispatch", metavar="NAME", help="also manage a dispatcher service for agent NAME")
     sv.add_argument("--dir", help="agent folder for the dispatcher")
     sv.add_argument("command", nargs=argparse.REMAINDER, help="-- then the dispatcher command")
+
+    so = sp.add_parser("socket", help="owner: Socket Mode (Slack pushes messages) for an app only you use")
+    so.add_argument("action", choices=["enable", "disable"])
+    so.add_argument("--app-token-file", help="file with the app-level token (xapp-..., scope connections:write), "
+                                             "chmod 600 (for enable)")
+    so.add_argument("--only-me", action="store_true",
+                    help="confirm nobody else signs in to this Slack app with read access (required for enable)")
+    so.add_argument("--as", dest="identity", help="Slack user ID, when several identities are added")
+
+    cf = sp.add_parser("config", help="show or change settings in config.yaml (the daemon picks them up)")
+    cf.add_argument("action", choices=["get", "set", "unset"])
+    cf.add_argument("key", nargs="?")
+    cf.add_argument("value", nargs="?", help="YAML value, e.g. 30, search, [A1, A2]")
 
     sp.add_parser("status", help="daemon state, agents, poll set, API usage").add_argument(
         "--verbose", action="store_true")
@@ -312,6 +329,14 @@ def run(args):
         return out(call("ack", name=agent_name(args), seqs=args.seqs, outcome=args.outcome, note=args.note))
     if c == "status":
         return out(call("status", verbose=args.verbose))
+    if c == "socket":
+        if args.action == "enable" and not args.app_token_file:
+            raise SystemExit("error: --app-token-file is required for enable")
+        return out(call("socket", action=args.action,
+                        app_token_file=args.app_token_file and os.path.abspath(os.path.expanduser(args.app_token_file)), only_me=args.only_me,
+                        identity=args.identity))
+    if c == "config":
+        return config_cmd(args)
     if c == "doctor":
         return out(call("doctor"))
     if c == "log":
@@ -325,6 +350,39 @@ def run(args):
     if c == "request-send":
         return out(call("request_send", name=agent_name(args), why=args.why))
     return run_owner(args)
+
+
+def config_cmd(args):
+    """`doorbell config`: read or edit config.yaml. Unknown keys and bad values are refused before
+    anything is written; the running daemon reloads the file within a few seconds."""
+    current = yaml.safe_load(config.CONFIG_FILE.read_text()) if config.CONFIG_FILE.exists() else {}
+    current = current or {}
+    if args.action == "get":
+        cfg = config.load()
+        return out({args.key: cfg[args.key]} if args.key else cfg)
+    if not args.key or args.key not in config.DEFAULTS:
+        raise SystemExit(f"error: unknown key {args.key!r}; keys: {', '.join(sorted(config.DEFAULTS))}")
+    if args.action == "unset":
+        current.pop(args.key, None)
+    else:
+        if args.value is None:
+            raise SystemExit("error: give a value")
+        try:
+            value = yaml.safe_load(args.value)
+        except yaml.YAMLError as e:
+            raise SystemExit(f"error: can't read {args.value!r}: {e}")
+        try:
+            config.validate({args.key: value}, where="config")
+        except ValueError as e:
+            raise SystemExit(f"error: {e}")
+        current[args.key] = value
+    config.HOME.mkdir(parents=True, exist_ok=True)
+    import tempfile
+    fd, tmp = tempfile.mkstemp(dir=config.HOME, prefix=".config.", suffix=".tmp")
+    with os.fdopen(fd, "w") as f:
+        f.write(yaml.safe_dump(current, sort_keys=True))
+    os.replace(tmp, config.CONFIG_FILE)
+    return out({"saved": str(config.CONFIG_FILE), args.key: current.get(args.key, config.DEFAULTS[args.key])})
 
 
 CAN_POST = ("This sign-in can also post messages as you: you allowed chat:write for this Slack app before "
@@ -371,7 +429,9 @@ def login(args):
         creds = oauth.login(client_id, {None: "watch"}.get(role, role), args.redirect_uri or oauth.DEFAULT_REDIRECT,
                             args.team, args.timeout, not args.no_browser and role not in ("send", "both"),
                             api_base=cfg["slack_api_base"],
-                            announce=announce, paste=paste)
+                            announce=announce, paste=paste,
+                            extra_scopes=["search:read"] if (cfg.get("login_search") if args.search is None
+                                                              else args.search) else [])
     except oauth.LoginError as e:
         raise SystemExit(f"error: {e}")
     can_post = "chat:write" in creds["scopes"]
