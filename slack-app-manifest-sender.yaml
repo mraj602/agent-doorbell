@@ -1,17 +1,28 @@
-# Optional second Slack app for Agent Doorbell: the token Doorbell sends with.
+# Slack app manifest for Agent Doorbell: the write app of layout C (optional).
 #
 # Only needed if you want agents to reply through Doorbell (`doorbell draft` and `doorbell
-# send`). The watcher keeps using its own read-only token; this one can only post and react.
+# send`) and you want the read and write tokens in separate apps. The watcher keeps using
+# its own read-only app; this one can only post and react. If you would rather have one app
+# for both, use slack-app-manifest-readwrite.yaml instead.
 #
 # To use it:
 #   1. Go to https://api.slack.com/apps and choose Create New App -> From a manifest.
 #   2. Pick the same workspace, paste this file, and create the app.
-#   3. Choose Install to Workspace and approve it.
-#   4. Under OAuth & Permissions, copy the User OAuth Token (xoxp-...) into a file with mode
-#      600, then run `doorbell sender add --token-file <file>` in your terminal. Doorbell seals
-#      it with a password you choose; after that you can delete the file.
+#   3. Under Basic Information, copy the Client ID and share it with the people who will use
+#      sending. The Client ID is not a secret. There is no client secret.
+#   4. Each person runs `doorbell login --send --client-id <this Client ID>` in their own
+#      terminal, opens the link, clicks Allow, and chooses a sending password. Doorbell
+#      seals the token with it. Nobody copies or pastes a token.
+#
+# This must be a different Slack app from the one the person watches with. With the same
+# app, Slack adds up the scopes the person approved, the watching token could post too, and
+# Doorbell would switch to one sealed token (layout B) instead.
 #
 # Messages are posted as you (user token), the same as the ones you type.
+#
+# pkce_enabled makes this a public client (no client secret) so that any workspace member
+# can sign in. Slack treats this as one-way: once PKCE is on, only Slack support can turn it
+# off. The redirect URL is where `doorbell login` listens on your own machine.
 _metadata:
   major_version: 1
   minor_version: 1
@@ -19,6 +30,9 @@ display_information:
   name: Agent Doorbell Sender
   description: Posts the replies you approve, or allow, through Agent Doorbell.
 oauth_config:
+  redirect_urls:
+    - http://localhost:8765/
+  pkce_enabled: true
   scopes:
     user:
       - chat:write

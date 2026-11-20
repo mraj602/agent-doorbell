@@ -46,15 +46,31 @@ def seal(token, password):
                        "salt": _b64(salt), "nonce": _b64(nonce), "ct": _b64(ct)})
 
 
-def unseal(blob, password):
-    """Returns (token, grant_key). Raises BadPassword if the password is wrong."""
+def open_sealed(blob, password):
+    """Returns (plaintext, encryption key, grant key). Raises BadPassword if the password is wrong.
+    The plaintext is a bare token (0.2) or a credentials JSON object (0.3, see oauth.py)."""
     b = json.loads(blob)
     enc, mac = derive(password, _unb64(b["salt"]), b["n"], b["r"], b["p"])
     try:
-        token = AESGCM(enc).decrypt(_unb64(b["nonce"]), _unb64(b["ct"]), b"agent-doorbell sender token v1")
+        plain = AESGCM(enc).decrypt(_unb64(b["nonce"]), _unb64(b["ct"]), b"agent-doorbell sender token v1")
     except InvalidTag:
         raise BadPassword("wrong password") from None
-    return token.decode(), mac
+    return plain.decode(), enc, mac
+
+
+def unseal(blob, password):
+    """Returns (plaintext, grant_key). Raises BadPassword if the password is wrong."""
+    plain, _, mac = open_sealed(blob, password)
+    return plain, mac
+
+
+def reseal(blob, enc_key, plaintext):
+    """Seal new plaintext under the same password without asking for it again (token renewal
+    while unlocked): same salt and key, fresh nonce. The grant key stays the same."""
+    b = json.loads(blob)
+    nonce = os.urandom(12)
+    ct = AESGCM(enc_key).encrypt(nonce, plaintext.encode(), b"agent-doorbell sender token v1")
+    return json.dumps(dict(b, nonce=_b64(nonce), ct=_b64(ct)))
 
 
 def grant_mac(grant_key, identity, agent):

@@ -15,16 +15,16 @@ doing the setup for you, can confirm it worked before moving on.
 > **Another AI agent?** Point it at this file and say "follow docs/SETUP.md". There is a
 > section for agents at the end: [Notes for AI agents doing the setup](#notes-for-ai-agents-doing-the-setup).
 
-**Who does what.** You do the steps that need you: creating the Slack app and token, starting
-the watcher, and deciding what the agent may do. The agent does its own part: it registers
+**Who does what.** You do the steps that need you: signing in to Slack (one click on Allow),
+starting the watcher, and deciding what the agent may do. The agent does its own part: it registers
 itself and starts listening.
 
 | Step | Who |
 |---|---|
 | [1. Install](#1-install) | You (or your agent) |
-| [2. Create your Slack app and token](#2-create-your-slack-app-and-token) | **You**, in a browser |
-| [3. Start the watcher](#3-start-the-watcher) | You (or your agent) |
-| [4. Add your token](#4-add-your-token) | You (or your agent) |
+| [2. Start the watcher](#2-start-the-watcher) | You (or your agent) |
+| [3. Get a Slack app and its Client ID](#3-get-a-slack-app-and-its-client-id) | You, or whoever manages the workspace |
+| [4. Sign in with `doorbell login`](#4-sign-in-with-doorbell-login) | **You**, one click in a browser |
 | [5. Create an agent folder](#5-create-an-agent-folder) | You (or your agent) |
 | [6. Decide what the agent may do](#6-decide-what-the-agent-may-do) | **You** |
 | [7. Run the agent](#7-run-the-agent) | You start it; it registers itself |
@@ -38,17 +38,21 @@ Also: [Everyday use](#everyday-use) · [Several agents](#several-agents) · [Con
 You need:
 
 - **Linux, macOS or Windows**, with Python 3.10 or newer.
-- **A Slack workspace where you may create an app.** Free plans work. Some workspaces require
-  an admin to approve new apps; if so, the install step asks for approval.
+- **A Slack workspace, and the Client ID of a Doorbell Slack app in it.** Free plans work.
+  Anyone in the workspace can sign in to an existing app; creating one needs permission to
+  create apps (see [ORG-SETUP.md](ORG-SETUP.md)). Some workspaces require an admin to approve
+  apps; if so, the first sign-in asks for approval.
 - **An agent CLI with a non-interactive mode**: Claude Code (`claude -p`), Codex
   (`codex exec`), Gemini CLI (`gemini -p`), or your own script.
 - **If the agent should reply**, a Slack tool in that agent, for example the Slack plugin for
   Claude Code (`/plugin install slack@claude-plugins-official`, then sign in when it asks).
   If you only want triage (summaries of what needs you), no Slack tool is needed.
 
-Agent Doorbell watches Slack with a read-only token. Replies come either from your agent's
-own Slack tool, under the rules your agent's harness enforces, or, if you set it up, through
-Doorbell itself with your approval ([Sending through Doorbell](#sending-through-doorbell-optional)).
+Agent Doorbell watches Slack with a read-only token where it can. You get it by signing in
+with `doorbell login`, which never shows it to you or to an agent. Replies come either from your
+agent's own Slack tool, under the rules your agent's harness enforces, or, if you set it up,
+through Doorbell itself with your approval
+([Sending through Doorbell](#sending-through-doorbell-optional)).
 
 ## 1. Install
 
@@ -58,21 +62,222 @@ pipx install agent-doorbell
 # or the latest from GitHub: pipx install git+https://github.com/mraj602/agent-doorbell
 ```
 
-**Check:** `doorbell --version` prints `doorbell 0.1.0` or newer.
+**Check:** `doorbell --version` prints a version number.
 
-## 2. Create your Slack app and token
+## 2. Start the watcher
 
-Each person creates their own small, private app. That keeps the app "internal", which keeps
-Slack's normal rate limits, and its token can only read.
+```bash
+doorbell service install
+```
 
-1. Open <https://api.slack.com/apps> and choose **Create New App → From a manifest**.
-2. Pick your workspace.
-3. Paste the contents of [`slack-app-manifest.yaml`](../slack-app-manifest.yaml) (YAML tab),
-   then **Next → Create**.
-4. Open **Install App** in the sidebar and choose **Install to Workspace**, then **Allow**.
-   If your workspace needs admin approval, request it and continue once approved.
-5. Copy the **User OAuth Token**. It starts with `xoxp-`.
-6. Save it to a file only you can read. Paste the token when asked; it isn't echoed or stored
+This installs and starts `doorbelld` as a per-user service that starts at login: a systemd
+user unit on Linux, a launchd agent on macOS, a Task Scheduler task (`AgentDoorbell-doorbelld`)
+on Windows. On Linux, also run `loginctl enable-linger $USER` if it should keep running while
+you are logged out. Without a service manager, run `doorbell daemon` under your own supervisor
+(tmux, supervisord, a container).
+
+**Check:** `doorbell status` prints JSON with `"state": "DORMANT"`. Dormant means no agents
+yet, so it makes zero Slack API calls.
+
+## 3. Get a Slack app and its Client ID
+
+`doorbell login` needs the **Client ID** of a Slack app that has PKCE on. The Client ID is not
+a secret, and there is no client secret.
+
+- **Your workspace already has one.** Ask whoever set it up for the Client ID. You don't need
+  to be an app collaborator. Skip to step 4.
+- **You create it** (or you are the admin). Create the app from a manifest, or reuse any
+  internal app, and copy the Client ID from **Basic Information**.
+  [ORG-SETUP.md](ORG-SETUP.md) has the details.
+
+| App | Manifest | Who can send through Doorbell |
+|---|---|---|
+| **Read-only** | [`slack-app-manifest.yaml`](../slack-app-manifest.yaml) | Nobody. Everyone watches with a read-only token |
+| **Read + write** | [`slack-app-manifest-readwrite.yaml`](../slack-app-manifest-readwrite.yaml) | Members who turn it on with `doorbell login --send`. Everyone else still gets a read-only token |
+| **A second, write app** | [`slack-app-manifest-sender.yaml`](../slack-app-manifest-sender.yaml) | Needed only for layout C below |
+
+To create an app: open <https://api.slack.com/apps>, choose **Create New App → From a
+manifest**, pick your workspace, paste the manifest (YAML tab), and create it. If your
+workspace requires admin approval for apps, it is requested at first sign-in. No reinstall is
+needed: each member's sign-in grants that member's own token.
+
+Then give Doorbell the Client ID, either once, for all later commands:
+
+```bash
+export DOORBELL_SLACK_CLIENT_ID=<Client ID>      # or put slack_client_id: <Client ID> in config.yaml
+```
+
+or with `--client-id <Client ID>` on each `doorbell login`. The daemon reads `config.yaml`
+when it starts, so if you set the config key, restart it (`doorbell service install` again).
+
+> **PKCE is one-way.** The manifests turn it on, which makes the app a public client. Only
+> Slack support can turn it off again. This matters only if you add PKCE to an existing app
+> that other tools use; see [ORG-SETUP.md](ORG-SETUP.md#enabling-pkce-on-an-existing-app-is-one-way).
+
+**Check:** you have a Client ID that looks like `1234567890.1234567890`.
+
+## 4. Sign in with `doorbell login`
+
+```bash
+doorbell login --client-id <Client ID>
+```
+
+This is the normal path. It prints `Open this link to sign in: <url>` and opens your browser.
+Click **Allow** on Slack's page; the browser then shows "Signed in to Agent Doorbell". The
+token is never shown and never pasted.
+
+Doorbell asks Slack for the **read scopes only**, then looks at what the returned token can
+really do. There are two outcomes:
+
+| The token | What Doorbell does | Layout |
+|---|---|---|
+| **can't post** (the usual case) | Saves it in a credentials file (`credentials/<your user ID>.json`, mode 600) and adds your identity. Watching is unattended: it survives restarts by itself. | **A** |
+| **can post** | Tells you why (below). Only if you are the owner, in a terminal, not inside an agent: asks you for a password, seals the token with it, and watches and sends with that one token. No file is written. | **B** |
+
+If a token that can post comes back and the command isn't run by the owner in a terminal (for
+example an agent ran it), Doorbell refuses, revokes the new token and saves nothing.
+
+**Check (layout A):** the output says "Watching with a read-only token". `doorbell doctor`
+shows your identity with `"token": "ok"` and `"missing_scopes": []`.
+
+**Check (layout B):** `doorbell status` shows your identity with `"mode": "sealed"` and
+`"status": "ok"`, and `"sending"` with `"unlocked": true`.
+
+### Why a read-only sign-in can return a token that can post
+
+Slack adds up the scopes one person has approved for one app, across **all** of that person's
+tokens for that app, as long as any of them is alive. Revoking one token doesn't remove
+scopes. Only revoking every token of that person for that app resets it; the next sign-in then
+gets exactly the scopes it asks for.
+
+Approvals are per person. One member approving `chat:write` gives nothing to another member.
+So on one app that allows both read and write scopes, member X can run layout A and member Y
+layout B.
+
+### The three layouts
+
+| | A. Watch only | B. One sealed token | C. Two apps |
+|---|---|---|---|
+| Apps | 1 | 1 | 2 (really two: see below) |
+| Watching token | read-only, in a file | the same token that sends, sealed | read-only, in a file |
+| Sending token | none | the same token, sealed | a second token from the write app, sealed |
+| Agents can send through Doorbell | No | Yes | Yes |
+| After a restart | Watching resumes by itself | Locked: watching and sending wait for `doorbell unlock`. Nothing is missed | Watching resumes by itself. Sending needs `doorbell unlock` |
+| A leaked file gives | Read access only | Nothing: no file exists | Read access only |
+
+A token that can post is never stored in a plain file. That is why B asks for a password and
+can't resume by itself, and why C keeps the watching token separate. Layout C needs two
+different Slack apps: with one app, Slack's scope accumulation would make the watching token
+able to post too.
+
+### Turn on sending
+
+```bash
+doorbell login --send
+```
+
+Run it in your own terminal. What happens depends on the app:
+
+- **The same app you watch with:** your watching token would be able to post too, so Doorbell
+  switches to one sealed token (layout B). It revokes the old file token and deletes its file.
+- **Another app** (`--client-id <write app's Client ID>`): layout C. The watching token stays
+  read-only in its file, and the new token is sealed.
+
+It asks for a sending password (new on the first run; 8 characters or more). If one is
+already set, it asks for the current one too.
+
+**Check:** `doorbell status` shows `"sending"` with your user and `"unlocked": true`.
+
+### Choosing explicitly: `--for`
+
+`doorbell login --for watch|send|both` skips the automatic decision.
+
+| `--for` | Token | Notes |
+|---|---|---|
+| `watch` | read scopes, saved in a file | Refuses a token that can post: it asks you to run `doorbell login` without `--for` instead, and revokes the token it just got. |
+| `send` | chat:write (and reactions:write), sealed | Owner only. Same as `--send`. |
+| `both` | read and write scopes, sealed | Owner only. One token watches and sends (layout B). |
+
+### Options
+
+| Option | Meaning |
+|---|---|
+| `--client-id ID` | The app's Client ID. Default: config `slack_client_id`, else `DOORBELL_SLACK_CLIENT_ID`. |
+| `--send` | Turn on sending (see above). |
+| `--for watch\|send\|both` | Choose what to sign in for instead of letting Doorbell decide. |
+| `--redirect-uri URI` | Default `http://localhost:8765/doorbell/callback`. Must be under a redirect URL registered in the app. Doorbell listens on that port. |
+| `--team T` | Pick the workspace when you belong to several. |
+| `--no-browser` | Print the link and don't open a browser. (`--send`, `--for send` and `--for both` never open one.) |
+| `--timeout 300` | Seconds to wait for you to click Allow. |
+
+### On a server, over SSH, or headless
+
+The browser is on another machine, so Slack can't reach the box. It still works:
+
+1. Run `doorbell login` on the box. It prints the link.
+2. Open the link in your laptop's browser and click **Allow**.
+3. The browser ends on `http://localhost:8765/doorbell/callback?code=...&state=...`. The
+   page won't load. That is expected.
+4. Copy that whole address and paste it into the waiting `doorbell login`. It prompts for it
+   when run in a terminal.
+
+The code is single-use, expires within minutes, and is useless without the PKCE verifier,
+which never leaves the box. The other way is a tunnel from your laptop,
+`ssh -L 8765:localhost:8765 user@box`, then open the link in the laptop's browser.
+
+### How tokens last
+
+Tokens from a localhost sign-in **rotate**. They expire after 12 hours and come with a refresh
+token. Doorbell renews them on its own, with no client secret: when less than an hour is
+left or less than half of its life is left, whichever is smaller, so at most once per half life. With PKCE, refresh tokens expire after 30
+days, so if Doorbell doesn't run for 30 days, sign in again.
+
+If renewal fails, the identity shows `"status": "needs_login"` and you get one notification.
+Cursors and queued items are kept, so after `doorbell login` it catches up.
+
+A token with an expiry but no refresh token can't be renewed: at expiry the identity becomes
+`needs_login`. A sealed token is renewed while Doorbell is unlocked. If it expired while locked,
+`doorbell unlock` renews it.
+
+### Status of an identity
+
+`doorbell status` shows, per identity:
+
+| Field | Values |
+|---|---|
+| `mode` | `file` (read-only token in a file) or `sealed` (one token, layout B) |
+| `status` | `ok`, `locked`, `needs_login` or `broken` |
+| `token_expires_in_s` | Seconds until the token expires (renewed before that) |
+| `client_id` | The app the token came from |
+| `next` | What to run, when `status` isn't `ok` |
+
+### If a file token later becomes able to post
+
+If a token that `doorbell login` saved in a file later becomes able to post (you approved
+`chat:write` for that app somewhere else, so Slack's scopes added up), the daemon revokes it
+at once, deletes its file, sets the identity to `needs_login` and notifies you once. Run
+`doorbell login`: it seals a new token (layout B).
+
+### Sign out: `doorbell logout`
+
+```bash
+doorbell logout            # or: doorbell logout --as U012ABCDEF
+```
+
+Revokes Doorbell's tokens with Slack (`auth.revoke`) and forgets them. Agents and cursors
+stay, so a later `doorbell login` picks up where watching stopped. It asks for the password
+when a sealed token exists. Other tools that use the same app keep their own tokens, and so
+keep the accumulated scopes alive: to get back to a read-only sign-in, revoke those too.
+
+### Manual token (alternative)
+
+If you can't use `doorbell login` (for example the app has no PKCE), you can still create a
+User OAuth Token by hand and give Doorbell the file. This works as before:
+
+1. Create the app from [`slack-app-manifest.yaml`](../slack-app-manifest.yaml) (you may remove
+   the `pkce_enabled` and `redirect_urls` lines), install it, and copy the **User OAuth
+   Token** (`xoxp-`). Only app collaborators can install the app this way.
+2. Save it to a file only you can read. Paste the token when asked; it isn't echoed or stored
    in your shell history.
 
    Linux and macOS:
@@ -90,35 +295,12 @@ Slack's normal rate limits, and its token can only read.
    [Net.NetworkCredential]::new('', $s).Password | Set-Content -NoNewline "$HOME\.config\doorbell\slack-token"
    ```
 
-**Check:** the file contains one line starting with `xoxp-`. On Linux and macOS,
-`ls -l ~/.config/doorbell/slack-token` shows `-rw-------`.
+3. Add it: `doorbell identity add --token-file ~/.config/doorbell/slack-token`.
 
-The app has **read scopes only** (`channels`, `groups`, `im`, `mpim` history and read,
-`users:read`, `usergroups:read`).
-
-## 3. Start the watcher
-
-```bash
-doorbell service install
-```
-
-This installs and starts `doorbelld` as a per-user service that starts at login: a systemd
-user unit on Linux, a launchd agent on macOS, a Task Scheduler task (`AgentDoorbell\doorbelld`)
-on Windows. On Linux, also run `loginctl enable-linger $USER` if it should keep running while
-you are logged out. Without a service manager, run `doorbell daemon` under your own supervisor
-(tmux, supervisord, a container).
-
-**Check:** `doorbell status` prints JSON with `"state": "DORMANT"`. Dormant means no agents
-yet, so it makes zero Slack API calls.
-
-## 4. Add your token
-
-```bash
-doorbell identity add --token-file ~/.config/doorbell/slack-token
-```
-
-**Check:** the output shows your Slack user ID, name and workspace, and `"warning": null`.
-Then run `doorbell doctor`: your identity shows `"token": "ok"` and `"missing_scopes": []`.
+**Check:** the file contains one line starting with `xoxp-` (on Linux and macOS,
+`ls -l` shows `-rw-------`). `identity add` shows your user and `"warning": null`, and
+`doorbell doctor` shows `"token": "ok"`. A manual token doesn't renew. A token that can post
+(`chat:write`) belongs in `doorbell sender add`, not in a plain file.
 
 ## 5. Create an agent folder
 
@@ -288,22 +470,30 @@ watcher recognises those replies as the agent's, not yours.
 | `doorbell deregister` | Stop listening. With no agents left, the daemon makes zero API calls. |
 | `doorbell doctor` | Token, scopes, and the app IDs seen posting as you |
 | `doorbell review` | Approve, edit or reject the agents' drafts (if you set up sending) |
-| `doorbell unlock` | After a reboot, let granted agents send again |
+| `doorbell unlock` | After a reboot, let granted agents send again (layout B: also resumes watching) |
+| `doorbell lock` | Stop all direct sends (layout B: also pauses watching) until `doorbell unlock` |
+| `doorbell login` | Sign in, or sign in again after `needs_login` |
+| `doorbell logout` | Revoke Doorbell's Slack tokens and forget them. Agents and cursors stay |
 
 ## Sending through Doorbell (optional)
 
-New in 0.2.0. Lets agents answer through Doorbell instead of their own Slack tool, with the
+Lets agents answer through Doorbell instead of their own Slack tool, with the
 policy enforced by Doorbell and your password, the same on every harness. The watcher keeps
-its read-only token; sending uses a second token.
+its read-only token (layouts A and C), or one sealed token does both (layout B).
 
-1. **Create the sender app.** At <https://api.slack.com/apps>, **Create New App → From a
-   manifest**, paste [`slack-app-manifest-sender.yaml`](../slack-app-manifest-sender.yaml)
-   (scopes `chat:write`, `reactions:write`), install it, and save its User OAuth Token to a
-   file the same way as in step 2 (for example `~/.config/doorbell/sender-token`).
-2. **Add it, in your own terminal:** `doorbell sender add --token-file ~/.config/doorbell/sender-token`.
-   It asks for a new sending password (8 characters or more). The token is sealed with it in
-   Doorbell's database. **Delete the token file afterwards**: a readable token file is all an
-   agent would need to set up sending of its own.
+1. **Pick the app.** Sending through the app you watch with gives layout B (that app must
+   allow `chat:write`: [`slack-app-manifest-readwrite.yaml`](../slack-app-manifest-readwrite.yaml)).
+   Sending through a second app gives layout C: create it from
+   [`slack-app-manifest-sender.yaml`](../slack-app-manifest-sender.yaml) (scopes
+   `chat:write`, `reactions:write`) and share its Client ID (see
+   [ORG-SETUP.md](ORG-SETUP.md)).
+2. **Turn it on, in your own terminal:** `doorbell login --send` (layout B), or
+   `doorbell login --send --client-id <write app's Client ID>` (layout C). Click **Allow**,
+   then choose a sending password (8 characters or more). The token is sealed with it in
+   Doorbell's database and never written to a file. In layout B, Doorbell also revokes the old
+   file token and deletes its file. (The older route still works: save a
+   token to a file and run `doorbell sender add --token-file <file>`, then delete the file: a
+   readable token file is all an agent would need to set up sending of its own.)
 3. **Tell the agent how to reply.** In `AGENTS.md`, under "How you may reply", keep the
    Doorbell draft or send line. The agent's commands are in its protocol section.
 
@@ -325,19 +515,25 @@ with `doorbell revoke <agent>`.
 
 **After a restart Doorbell is locked.** The decrypted token lives only in the daemon's memory,
 so after a reboot or a daemon restart, direct sends fail (the agent drafts instead, and you
-get a notification) until you run `doorbell unlock`. `doorbell lock` stops all direct sends at
-once. `doorbell passwd` changes the password; `doorbell sender remove` (password) deletes the
-sealed token and every grant.
+get a notification) until you run `doorbell unlock`. In layout B the watching token is sealed
+too, so watching also waits for `doorbell unlock`, then continues from the saved cursors. If
+the sealed token expired while locked, `unlock` renews it. `doorbell lock` stops all direct
+sends at once; in layout B it also pauses watching until `doorbell unlock`.
+`doorbell passwd` changes the password; `doorbell sender remove` (password) deletes the
+sealed token and every grant. In layout B it refuses, because that token is also the
+watcher's: switch watching to a read-only token first (a read-only app, or a sign-in after
+every token for the app was revoked). `doorbell logout` revokes and forgets the tokens.
 
 | Command | Who | Password |
 |---|---|---|
 | `doorbell draft <seq> --text ...` / `--text-file -` | agent | no |
 | `doorbell send <seq> ...`, `doorbell react <seq> <emoji>` | granted agent | no (needs `grant` and `unlock`) |
 | `doorbell request-send --why "..."` | agent | no |
-| `doorbell sender add --token-file F` | you | sets it |
+| `doorbell login --send` (or `--for send\|both`), `doorbell sender add --token-file F` | you | sets it |
 | `doorbell review`, `doorbell approve <id>` | you | yes |
 | `doorbell grant <agent>`, `doorbell unlock`, `doorbell passwd`, `doorbell sender remove` | you | yes |
 | `doorbell reject <id>`, `doorbell revoke <agent>`, `doorbell lock`, `doorbell drafts` | you | no |
+| `doorbell logout` | you | yes, when a sealed token exists |
 
 The password commands need a terminal and refuse to run inside an AI agent session. That's a
 convenience; the protection is that agents don't know the password. An agent that may run any
@@ -431,14 +627,32 @@ send_footer: ""                 # appended to messages Doorbell sends, e.g. " _(
 
 ## Troubleshooting
 
+### Sign-in problems
+
+| What you see | Cause and fix |
+|---|---|
+| Slack: `redirect_uri did not match any configured URIs` | The redirect URL isn't on the app, or wasn't saved. Under **OAuth & Permissions → Redirect URLs** add `http://localhost:8765/` and click **Save URLs**. Or pass `--redirect-uri` with a localhost URL the app has. Scheme, host and port must match. |
+| `can't listen on port 8765` | Another program (or an earlier `doorbell login` still waiting) has the port. Close it, or register another localhost URL on the app and pass `--redirect-uri http://localhost:<port>/doorbell/callback`. |
+| `Slack returned access_denied` | You clicked Cancel, or the workspace blocked the app. Run it again and click **Allow**. With no Allow button, ask an admin to approve the app ([ORG-SETUP.md](ORG-SETUP.md#approval-settings)). |
+| `This sign-in can also post messages as you` | Slack added up your earlier approvals of `chat:write` for this app, so the read-only sign-in returned a token that can post. Doorbell won't keep it in a file. Run `doorbell login` in your own terminal to seal it (layout B), or [reset the scopes](#why-a-read-only-sign-in-can-return-a-token-that-can-post) to stay read-only. If an agent ran the login, Doorbell revoked the token and saved nothing. |
+| `timed out: no sign-in within 300 seconds` | Nobody clicked Allow in time, or the browser is on another machine. Run it again. For a server or SSH, paste the `localhost:8765/doorbell/callback?code=...` address into the waiting command ([how](#on-a-server-over-ssh-or-headless)). |
+| Identity `needs_login` | Renewing failed (Doorbell wasn't running for 30 days, or access was revoked), or a file token became able to post. Run `doorbell login`. Cursors and queued items are kept, so it catches up. |
+| `no Slack app to sign in with` | Pass `--client-id`, or set `slack_client_id` in `config.yaml` or `DOORBELL_SLACK_CLIENT_ID`. |
+| `invalid_code_verifier` | The sign-in was started twice, or the browser reused an old link. Open only the newest link. If it repeats, check that PKCE is on for the app. |
+| `missing scopes` | The app lacks scopes this login needs (`chat:write` for sending). Add them under **User Token Scopes** in the app, then sign in again. |
+| `login --for watch` refuses | The token can post. Run `doorbell login` without `--for` to seal it, or watch with a read-only app. |
+| Identity `locked` after a restart | Layout B: the sealed token is only in memory after you unlock. Run `doorbell unlock`. Watching resumes and catches up. |
+
+### Other problems
+
 | Symptom | Cause and fix |
 |---|---|
-| `doorbelld is not running` | Linux: `systemctl --user status doorbelld`. macOS: `~/Library/Logs/dev.agent-doorbell.doorbelld.log`. Windows: `schtasks /Query /TN AgentDoorbell\doorbelld`. Start it with `doorbell service install`, or run `doorbell daemon` in a terminal to see errors. |
+| `doorbelld is not running` | Linux: `systemctl --user status doorbelld`. macOS: `~/Library/Logs/dev.agent-doorbell.doorbelld.log`. Windows: `schtasks /Query /TN AgentDoorbell-doorbelld`. Start it with `doorbell service install`, or run `doorbell daemon` in a terminal to see errors. |
 | `doorbelld is already running` | Only one daemon per state folder. Use the running one. |
 | `bad or missing access key` | The CLI and the daemon use different state folders. Check `DOORBELL_HOME`. |
-| `identity add`: `missing scopes` | The app's user scopes are incomplete. Re-check the manifest, reinstall the app, copy the new token. |
+| `identity add`: `missing scopes` | The app's user scopes are incomplete. Re-check the manifest, reinstall the app, and sign in again (or copy the new token, if you use a manual token). |
 | `identity add`: `readable by other users` | `chmod 600 <token file>`. |
-| `invalid_auth` / identity `broken` | The token was revoked or the app removed. Create a new token and run `identity add` again. |
+| `invalid_auth` / identity `broken` | The token was revoked or the app removed. Run `doorbell login` again (or, with a manual token, create a new one and run `identity add`). |
 | `no agent named ...` | The agent hasn't registered yet. It does so on its first run, or run `doorbell register` in its folder. |
 | Agent never wakes | `doorbell status`: is the agent `active` with a waiter? Is the conversation in `poll_set`? Was the message from you (never queued) or a bot not in `allow_bots`? |
 | Agent's `doorbell` commands are denied | Allow `Bash(doorbell *)` on the command line (step 6) or in your harness settings. |
@@ -448,7 +662,7 @@ send_footer: ""                 # appended to messages Doorbell sends, e.g. " _(
 | `send`: `may not send directly` | The agent isn't granted. It should draft; you can `doorbell grant <agent>`. |
 | `send`: `Doorbell is locked` | The daemon restarted. Run `doorbell unlock`. |
 | `send`: `no longer matches` | The agent's subscription changed since you granted it. Check it with `doorbell status`, then `doorbell grant <agent>` again. |
-| `sender add`: `missing scopes` | The sender token needs `chat:write`. Use `slack-app-manifest-sender.yaml`. |
+| `sender add` or `login --send`: `missing scopes` | The sender token needs `chat:write`. Use `slack-app-manifest-sender.yaml` or the read+write manifest. |
 | `... is for the owner, in their own terminal` | You ran a password command inside an agent session or without a terminal. Run it in your own terminal. |
 | Dispatcher logs `backing off` | Runs are resolving nothing. Run the agent command by hand in the folder to see the error. |
 
@@ -461,17 +675,27 @@ doorbell service uninstall
 pipx uninstall agent-doorbell
 ```
 
-Then delete the state folder (see [Configuration](#configuration)) and your token file, and
-delete the app at <https://api.slack.com/apps> (this revokes the token). If you set up
-sending, delete the sender app too.
+Then delete the state folder (see [Configuration](#configuration); it holds `credentials/`) and
+any manual token file. To revoke your token, remove the app from your account in Slack's
+**Apps** settings. If you created the app and nobody else uses it, delete it at
+<https://api.slack.com/apps>; if you set up sending with a second app, delete that too.
 
 ## Notes for AI agents doing the setup
 
 If you are an AI agent following this guide for a user:
 
-- **The user must do step 2 themselves** in a browser. Never ask them to paste the token into
-  the chat. Give them the command from step 2.6 so the token goes straight into a file, then
-  verify with the check.
+- **Signing in is the user's click.** You may run `doorbell login` yourself: it prints a link,
+  opens the browser, and the person clicks **Allow**. The token is never shown to you or saved
+  where you can read it, so never ask for a token in the chat. If the token can post, Doorbell
+  refuses to keep it for an agent, revokes it and saves nothing; then tell the person to run
+  `doorbell login` in their own terminal. On a remote box, add `--no-browser`, and tell the
+  person to open the link on their laptop and paste back the `localhost:8765/...` address it
+  ends on (see [On a server](#on-a-server-over-ssh-or-headless)).
+- **`doorbell login --send`, `--for send`, `--for both`, `logout` and `unlock` are owner-only.**
+  They ask for the sending password. Don't run them; tell the person to run them in their own
+  terminal.
+- If the person has no Client ID, send them to [ORG-SETUP.md](ORG-SETUP.md). Recommend a
+  read-only sign-in (layout A) unless they want Doorbell to send replies.
 - **Step 6 is the user's decision.** Ask which level they want (recommend draft or triage),
   and which agent CLI runs the agent. Don't change their harness's permission settings
   yourself; show them the flags and let them choose. Fill in `AGENTS.md` with them: ask who

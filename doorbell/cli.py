@@ -126,7 +126,24 @@ def build_parser():
 
     sp.add_parser("daemon", help="run doorbelld in the foreground")
 
-    ia = sp.add_parser("identity", help="add the Slack user token the watcher reads with")
+    lg = sp.add_parser("login", help="sign in to Slack in the browser (no token to copy)")
+    lg.add_argument("--send", dest="role", action="store_const", const="send",
+                    help="turn on sending: sign in to the app that may post (sealed with your password)")
+    lg.add_argument("--for", dest="role", choices=["watch", "send", "both"], default=None,
+                    help="choose yourself instead of letting Doorbell decide: watch (read-only token in a "
+                         "file), send (a token that can post, sealed), both (one token watches and sends, sealed)")
+    lg.add_argument("--client-id", help="the Slack app's Client ID (default: slack_client_id in config.yaml "
+                                        "or DOORBELL_SLACK_CLIENT_ID)")
+    lg.add_argument("--redirect-uri", default=None,
+                    help="a localhost redirect URL registered on the app (default http://localhost:8765/doorbell/callback)")
+    lg.add_argument("--team", help="Slack workspace ID, to skip the workspace picker")
+    lg.add_argument("--no-browser", action="store_true", help="only print the link")
+    lg.add_argument("--timeout", type=float, default=300, help="seconds to wait for the sign-in")
+
+    lo = sp.add_parser("logout", help="sign out: revoke Doorbell's Slack tokens and forget them")
+    lo.add_argument("--as", dest="identity", help="Slack user ID, when several identities are added")
+
+    ia = sp.add_parser("identity", help="add a Slack user token file the watcher reads with (or use `login`)")
     ia.add_argument("action", choices=["add"])
     ia.add_argument("--token-file", required=True, help="file containing an xoxp- user token (chmod 600)")
 
@@ -271,6 +288,10 @@ def run(args):
         return service(args.action, args.dispatch, args.dir, strip_dashes(args.command))
     if c == "identity":
         return out(call("identity_add", token_file=args.token_file))
+    if c == "login":
+        return login(args)
+    if c == "logout":
+        return logout(args)
     if c == "register":
         path = args.sub or ("sub.yaml" if Path("sub.yaml").exists() else None)
         sub = yaml.safe_load(open(path)) if path else {}
@@ -304,6 +325,128 @@ def run(args):
     if c == "request-send":
         return out(call("request_send", name=agent_name(args), why=args.why))
     return run_owner(args)
+
+
+CAN_POST = ("This sign-in can also post messages as you: you allowed chat:write for this Slack app before "
+            "(Slack adds up what each person allowed one app, for all their tokens).")
+
+
+def is_owner_terminal():
+    from . import owner
+    try:
+        owner.require_owner("login")
+        return True
+    except SystemExit:
+        return False
+
+
+def login(args):
+    """`doorbell login`: OAuth with PKCE in the browser. The token is never printed.
+
+    Without --for, Doorbell asks Slack for read scopes only and decides from what the token can
+    really do: read-only goes to a file and watches unattended (layout A); a token that can post
+    is sealed with a password and both watches and sends (layout B). `--send` turns on sending:
+    with the watching app that means layout B, with another app layout C."""
+    from . import oauth, owner
+    cfg = config.load()
+    client_id = args.client_id or cfg.get("slack_client_id")
+    if not client_id:
+        raise SystemExit("error: no Slack app to sign in with. Pass --client-id, or set slack_client_id in "
+                         f"{config.CONFIG_FILE} (or DOORBELL_SLACK_CLIENT_ID). Your workspace admin has the "
+                         "app's Client ID; see docs/ORG-SETUP.md.")
+    role = args.role
+    if role in ("send", "both"):
+        owner.require_owner(f"login --for {role}")
+    status = call("status")   # fail now, not after the browser round trip, if the daemon is down
+    paste = input if sys.stdin.isatty() else None
+    say = lambda s: print(s, flush=True)
+
+    def announce(line):
+        say(line)
+        if paste:
+            say("Browser on another machine (SSH, a server)? After Allow, its address bar shows "
+                "http://localhost:...?code=... (the page won't load). Paste that address here:")
+    say("Sign in to Slack and click Allow.")
+    try:
+        creds = oauth.login(client_id, {None: "watch"}.get(role, role), args.redirect_uri or oauth.DEFAULT_REDIRECT,
+                            args.team, args.timeout, not args.no_browser and role not in ("send", "both"),
+                            api_base=cfg["slack_api_base"],
+                            announce=announce, paste=paste)
+    except oauth.LoginError as e:
+        raise SystemExit(f"error: {e}")
+    can_post = "chat:write" in creds["scopes"]
+    say(f"Signed in as {creds['user_id']}.")
+
+    def give_up(msg):
+        oauth.revoke(cfg["slack_api_base"], creds)   # don't leave a token behind that nobody keeps
+        raise SystemExit(f"error: {msg}")
+
+    if role in (None, "watch") and not can_post:
+        path = config.HOME / "credentials" / f"{creds['user_id']}.json"
+        try:
+            from .slackapi import read_creds
+            previous = read_creds(str(path)) if path.exists() else None
+        except OSError:
+            previous = None
+        oauth.write_creds(str(path), creds)
+        try:
+            res = call("identity_add", token_file=str(path))
+        except SystemExit:
+            if previous:
+                oauth.write_creds(str(path), previous)
+            else:
+                path.unlink(missing_ok=True)
+            oauth.revoke(cfg["slack_api_base"], creds)
+            raise
+        if previous and previous.get("token") != creds["token"]:
+            oauth.revoke(cfg["slack_api_base"], previous)   # the sign-in it replaces
+        say("Watching with a read-only token (it can't post). Doorbell renews it on its own.")
+        return out(res)
+    if role in (None, "watch"):
+        reset = ("To watch read-only instead, revoke all your tokens for this app (`doorbell logout`, plus any "
+                 "other tool that uses the app) and sign in again; or watch with a separate read-only app.")
+        if role == "watch":
+            give_up(f"{CAN_POST} Doorbell never keeps a token that can post in a plain file. Run `doorbell login` "
+                    f"(without --for) to keep it sealed with a password. {reset}")
+        if not is_owner_terminal():
+            give_up(f"{CAN_POST} Such a token is kept sealed with a password, which only the owner types in a "
+                    f"terminal. Ask the owner to run `doorbell login` there. {reset}")
+        say(f"{CAN_POST}\nDoorbell keeps such a token sealed with a password, never in a plain file. It will watch "
+            f"and send with this one token. After Doorbell restarts, watching waits for `doorbell unlock`, then "
+            f"catches up; nothing is missed.\n{reset}")
+        role = "both"
+    elif role == "send":
+        ident = next((i for i in status.get("identities", []) if i["user_id"] == creds["user_id"]), None)
+        if ident and (ident.get("mode") == "sealed" or ident.get("client_id") == client_id):
+            say("This is the same Slack app you watch with, so your watch token can now post too. Doorbell switches "
+                "to one sealed token that watches and sends.")
+            role = "both"
+    old = None
+    if creds["user_id"] in (status.get("sending") or {}):
+        say("This replaces the sending token, which needs the current password.")
+        old = owner.ask_password(f"login --for {role}", "Current sending password: ")
+    else:
+        say("Choose a password for sending. Agents never get it; you type it to approve drafts, grant agents "
+            "and unlock after a restart.")
+    try:
+        pw = owner.ask_password(f"login --for {role}", "New sending password: " if not old else
+                                "New sending password (can be the same): ", confirm=True)
+        op = "sender_add" if role == "send" else "login_both"
+        return out(call(op, token_json=json.dumps(creds), password=pw, old_password=old))
+    except (SystemExit, KeyboardInterrupt) as e:
+        give_up(f"nothing was saved ({e})")
+
+
+def logout(args):
+    from . import owner
+    status = call("status")
+    ident = args.identity
+    pw = None
+    sending = status.get("sending") or {}
+    if (ident or (len(status.get("identities", [])) == 1 and status["identities"][0]["user_id"])) in sending \
+            or (not ident and sending):
+        pw = owner.ask_password("logout")
+    return out(call("logout", identity=ident, password=pw))
 
 
 def read_text(args):

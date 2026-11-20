@@ -58,6 +58,9 @@ def connect(path):
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
     db.executescript(SCHEMA)
+    cols = {r[1] for r in db.execute("PRAGMA table_info(identities)")}
+    if "mode" not in cols:   # 0.3: 'file' (token file) or 'sealed' (single-token mode, see sending.py)
+        db.execute("ALTER TABLE identities ADD COLUMN mode TEXT DEFAULT 'file'")
     return db
 
 

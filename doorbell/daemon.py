@@ -14,11 +14,13 @@ import signal
 import secrets
 import shutil
 import subprocess
+import threading
+import sys
 import time
 from collections import deque
 
-from . import config, store
-from .slackapi import RateLimited, Slack, SlackError, read_token
+from . import config, oauth, store
+from .slackapi import RateLimited, Slack, SlackError, read_creds, read_token
 
 LIVE = ("active", "detached")
 FATAL_ERRORS = {"invalid_auth", "token_revoked", "account_inactive", "not_authed", "missing_scope"}
@@ -35,9 +37,15 @@ class Daemon:
         self.pause_until = 0
         self.slacks = {}
         self.unlocked = {}   # identity -> (sender token, grant key); memory only, gone on restart
+        self.sealed_keys = {}  # identity -> (encryption key, credentials) while unlocked, for renewal
+        self.force_renew = set()       # identities whose token Slack reported expired
+        # Single-token mode: the watch token is sealed, so after a restart watching waits for `unlock`.
+        if self.db.execute("UPDATE identities SET status='locked' WHERE mode='sealed' AND status='ok'").rowcount:
+            self.notify_desktop("Doorbell restarted and is locked; watching resumes when you run: doorbell unlock")
         self.sending_to = set()        # (identity, channel) while a post is in flight
         self.send_lock = asyncio.Lock()      # one send at a time: checks and the post are atomic
         self.password_lock = asyncio.Lock()  # one password check at a time (scrypt is 64 MB each)
+        self.cred_lock = asyncio.Lock()      # one change to sealed credentials at a time (renewal included)
         self.last_convlist = {}
         self.last_usergroups = {}
         self.last_userlist = {}
@@ -83,10 +91,91 @@ class Daemon:
 
     def slack(self, identity):
         if identity not in self.slacks:
-            row = self.q1("SELECT token_file FROM identities WHERE user_id=?", identity)
-            self.slacks[identity] = Slack(read_token(os.path.expanduser(row["token_file"])),
-                                          self.cfg["slack_api_base"])
+            row = self.q1("SELECT token_file, mode FROM identities WHERE user_id=?", identity)
+            if row["mode"] == "sealed":
+                if identity not in self.unlocked:
+                    raise SlackError("token", "locked")
+                token = self.unlocked[identity][0]
+            else:
+                token = read_token(os.path.expanduser(row["token_file"]))
+            self.slacks[identity] = Slack(token, self.cfg["slack_api_base"])
         return self.slacks[identity]
+
+    def check_file_scopes(self, identity, sl):
+        """A token `doorbell login` saved in a file must stay read-only. Slack adds up what a person
+        allowed one app, so a later approval of chat:write (by any tool) makes it able to post:
+        then stop using the file and ask for a sealed sign-in."""
+        if not sl.scopes or "chat:write" not in sl.scopes or getattr(sl, "checked_post", False):
+            return
+        sl.checked_post = True
+        row = self.q1("SELECT mode, token_file FROM identities WHERE user_id=?", identity)
+        if row and row["mode"] == "file" and row["token_file"]:
+            try:
+                login_made = read_creds(os.path.expanduser(row["token_file"])) is not None
+            except OSError:
+                login_made = False
+            if login_made:
+                self.retire_postable_file(identity, row["token_file"])
+
+    def retire_postable_file(self, identity, token_file):
+        """A login-made file token that can post: revoke it and delete the file at once, so
+        nothing on disk can post (an agent running as you could read the file)."""
+        path = os.path.expanduser(token_file)
+        try:
+            creds = read_creds(path)
+            if creds:
+                threading.Thread(target=oauth.revoke, args=(self.cfg["slack_api_base"], creds), daemon=True).start()
+            os.unlink(os.path.realpath(path))
+        except OSError:
+            pass
+        self.needs_login(identity, "the watch token became able to post messages (chat:write was allowed for this "
+                                   "app), so Doorbell revoked it and deleted its file")
+
+    def needs_login(self, identity, why, command="doorbell login"):
+        """The sign-in can't be renewed. Watching stops (cursors stay) until the person signs in again."""
+        if self.db.execute("UPDATE identities SET status='needs_login', error=? WHERE user_id=? "
+                           "AND status!='needs_login'", (f"{why}; run `{command}`", identity)).rowcount:
+            self.notify_desktop(f"Slack sign-in for {identity} needs renewing ({why}). Run: {command}")
+        self.slacks.pop(identity, None)
+
+    async def renew(self):
+        """Renew sign-ins from `doorbell login` before they expire (only tokens Slack issues with
+        an expiry; most user tokens don't expire)."""
+        for r in self.q("SELECT user_id, token_file FROM identities WHERE mode='file' AND status='ok'"):
+            path = os.path.expanduser(r["token_file"])
+            try:
+                creds = read_creds(path)
+            except OSError:
+                continue
+            forced = r["user_id"] in self.force_renew
+            if creds and creds.get("expires_at") and not creds.get("refresh_token"):
+                if forced or creds["expires_at"] <= time.time():   # nothing to renew with
+                    self.force_renew.discard(r["user_id"])
+                    self.needs_login(r["user_id"], "the sign-in expired and Slack gave no way to renew it")
+                continue
+            if not creds or not creds.get("expires_at") or not (forced or oauth.due(creds, self.cfg["renew_before"])):
+                continue
+            self.force_renew.discard(r["user_id"])
+            try:
+                new = await asyncio.to_thread(oauth.refresh, self.cfg["slack_api_base"], creds)
+            except oauth.NetworkError as e:
+                store.audit(self.db, "renew_error", identity=r["user_id"], error=str(e))
+                continue
+            except oauth.LoginError as e:
+                store.audit(self.db, "renew_failed", identity=r["user_id"], error=str(e))
+                self.needs_login(r["user_id"], f"renewing the sign-in failed: {e}")
+                continue
+            if "chat:write" in (new.get("scopes") or []):
+                oauth.write_creds(path, new)          # so the retirement below revokes the new token
+                self.retire_postable_file(r["user_id"], r["token_file"])
+                continue
+            oauth.write_creds(path, new)
+            self.slacks.pop(r["user_id"], None)
+            store.audit(self.db, "token_renewed", identity=r["user_id"])
+        from .sending import renew_sealed
+        for ident in list(self.sealed_keys):
+            await renew_sealed(self, ident, force=ident in self.force_renew)
+            self.force_renew.discard(ident)
 
     async def api(self, identity, method, **params):
         while True:
@@ -102,8 +191,10 @@ class Daemon:
         self.calls.append(time.time())
         self.api_total += 1
         try:
-            d = await asyncio.to_thread(self.slack(identity).call, method, **params)
+            sl = self.slack(identity)
+            d = await asyncio.to_thread(sl.call, method, **params)
             self.db.execute("INSERT INTO api_calls VALUES(?,?,1)", (time.time(), method))
+            self.check_file_scopes(identity, sl)
             return d
         except RateLimited as e:
             self.pause_until = time.time() + e.retry_after
@@ -111,7 +202,10 @@ class Daemon:
             raise
         except SlackError as e:
             self.db.execute("INSERT INTO api_calls VALUES(?,?,0)", (time.time(), method))
-            if e.error in FATAL_ERRORS:
+            if e.error == "token_expired":
+                self.force_renew.add(identity)
+                self.slacks.pop(identity, None)
+            elif e.error in FATAL_ERRORS:
                 self.db.execute("UPDATE identities SET status='broken', error=? WHERE user_id=?",
                                 (str(e), identity))
                 self.notify_desktop(f"Slack token for {identity} failed: {e}")
@@ -593,6 +687,7 @@ class Daemon:
         while True:
             try:
                 self.lifecycle()
+                await self.renew()
             except Exception as e:
                 store.audit(self.db, "lifecycle_error", error=repr(e))
             await asyncio.sleep(self.cfg["lifecycle_every"])
@@ -635,7 +730,9 @@ def _exit_on_sigterm(signum, frame):
 
 def main():
     if already_running():
-        raise SystemExit(f"error: doorbelld is already running ({config.ENDPOINT})")
+        # Exit 0: a service manager must not restart a second copy over and over.
+        print(f"doorbelld is already running ({config.ENDPOINT})", file=sys.stderr)
+        raise SystemExit(0)
     # Service managers stop the daemon with SIGTERM; turn it into a normal exit so the endpoint
     # file is removed and clients don't try a stale port.
     signal.signal(signal.SIGTERM, _exit_on_sigterm)

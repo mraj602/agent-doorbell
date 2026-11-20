@@ -113,7 +113,7 @@ def test_second_daemon_refuses_to_start(env):
     import sys as _sys
     r = _sp.run([_sys.executable, "-m", "doorbell", "daemon"], env=env.env, capture_output=True, text=True,
                 timeout=30)
-    assert r.returncode != 0 and "already running" in r.stderr
+    assert r.returncode == 0 and "already running" in r.stderr   # 0: a service manager won't respawn it
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="SIGTERM is POSIX")

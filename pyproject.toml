@@ -30,7 +30,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/mraj602/agent-doorbell"
+Homepage = "https://mraj602.github.io/agent-doorbell/"
 Documentation = "https://github.com/mraj602/agent-doorbell/blob/main/docs/SETUP.md"
 Source = "https://github.com/mraj602/agent-doorbell"
 Changelog = "https://github.com/mraj602/agent-doorbell/blob/main/CHANGELOG.md"
