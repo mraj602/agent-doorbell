@@ -141,9 +141,10 @@ RECEIVER = textwrap.dedent("""
     batch = json.load(sys.stdin)
     with open(sys.argv[1], "a") as f:
         f.write(json.dumps([[m["text"] for m in it["messages"]] for it in batch["items"]]) + "\\n")
-    if len(sys.argv) > 2:
-        print("no live holder for tag:demo", file=sys.stderr)
+    if len(sys.argv) > 2:   # like wy: the refusal on stdout
+        print("no live holder for tag:demo")
         raise SystemExit(int(sys.argv[2]))
+    print("delivered to demo-session")
 """)
 
 
@@ -169,7 +170,8 @@ def test_handoff_sends_the_batch_and_skips_the_fallback(env, alice, tmp_path):
                 "--", sys.executable, "agent.py", timeout=60)
     assert r.returncode == 0, r.stderr
     assert lines(out) == [[["for the live session"]]]
-    assert "handed off" in r.stdout and "fake agent saw" not in r.stdout
+    assert "handed off" in r.stdout and "delivered to demo-session" in r.stdout
+    assert "fake agent saw" not in r.stdout
     assert len(env.items(name)) == 1   # stays open until the reply shows up in Slack (or an ack)
 
 

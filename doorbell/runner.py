@@ -71,11 +71,13 @@ def hand_off(name, handoff, folder, env, timeout, ok):
     try:
         r = subprocess.run(handoff, shell=True, cwd=folder, env=env, input=payload, text=True,
                            encoding="utf-8", capture_output=True, timeout=min(timeout, 120))
-        rc, said = r.returncode, (r.stderr.strip() or r.stdout.strip()).splitlines()
+        # The command's own one-line account (wy prints "delivered to ..." or the refusal on
+        # stdout); stderr when stdout is empty.
+        rc, said = r.returncode, (r.stdout.strip() or r.stderr.strip()).splitlines()
     except subprocess.TimeoutExpired:
         rc, said = "timeout", []
     if rc in ok:
-        log(f"handed off {seqs} ({len(payload)} bytes, exit {rc})")
+        log(f"handed off {seqs} ({len(payload)} bytes, exit {rc}){': ' + said[-1] if said else ''}")
         return "handed"
     log(f"handoff failed for {seqs} (exit {rc}){': ' + said[-1] if said else ''}")
     return "failed"
