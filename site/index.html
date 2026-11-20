@@ -201,21 +201,40 @@ claude plugin install agent-doorbell@agent-doorbell</code></pre>
 
     <section id="compare" class="sec" aria-labelledby="compare-h">
       <div class="wrap">
-        <h2 id="compare-h">How it compares</h2>
-        <div class="tscroll" role="region" aria-label="Comparison table" tabindex="0">
+        <h2 id="compare-h">Compared with other ways to put an agent on Slack</h2>
+        <p class="sub">Most self-hosted Slack agents keep a Socket Mode WebSocket open, and messages sent while it's down are lost. Hosted bots don't miss, but answer as a bot, in their cloud, on paid plans. Doorbell polls with cursors, so it catches up.</p>
+        <div class="tscroll" role="region" aria-label="Comparison with other Slack agent tools" tabindex="0">
           <table class="tbl compare">
-            <caption class="vh">How Agent Doorbell compares with an agent checking on a timer and a hosted bot</caption>
-            <thead><tr><td></td><th scope="col" class="us">Agent Doorbell</th><th scope="col">Agent checks on a timer</th><th scope="col">Hosted bot + LLM API</th></tr></thead>
+            <caption class="vh">How Agent Doorbell compares with other Slack agent tools</caption>
+            <thead><tr><th scope="col">Tool</th><th scope="col">Hears messages by</th><th scope="col">Messages sent while it's down</th><th scope="col">Replies appear as</th><th scope="col">Slack Free, no public URL</th></tr></thead>
             <tbody>
-              <tr><th scope="row">Tokens while idle</th><td class="us"><strong>Zero</strong></td><td>A model turn per check, all day</td><td>Zero</td></tr>
-              <tr><th scope="row">Replies as</th><td class="us">You, or drafts for you</td><td>You</td><td>A bot</td></tr>
-              <tr><th scope="row">Your repos and tools</th><td class="us">Yes</td><td>Yes</td><td>No</td></tr>
-              <tr><th scope="row">Infrastructure</th><td class="us">A local daemon</td><td>None</td><td>Server, public URL or socket, API key</td></tr>
-              <tr><th scope="row">Catches up after downtime</th><td class="us">Yes</td><td>No</td><td>Depends</td></tr>
+              <tr><th scope="row" class="us">Agent Doorbell</th><td class="us">Polling with cursors</td><td class="us"><strong>Caught up</strong></td><td class="us">You, or "Sent using @Claude" via the Slack MCP</td><td class="us">Yes</td></tr>
+              <tr><th scope="row">OpenClaw, Hermes Agent, ZeroClaw</th><td>Socket Mode WebSocket</td><td>Lost (reconnect only)</td><td>A bot (OpenClaw can post as you)</td><td>No URL needed; plan not stated</td></tr>
+              <tr><th scope="row">Claude Code Slack bots</th><td>Socket Mode WebSocket</td><td>Lost</td><td>A bot</td><td>No URL needed; plan not stated</td></tr>
+              <tr><th scope="row">Claude in Slack, Claude Tag</th><td>Events API, Anthropic's cloud</td><td>Not missed (cloud)</td><td>The Claude app</td><td>No: paid Slack or a Claude Team plan</td></tr>
+              <tr><th scope="row">Slack MCP / Claude connector</th><td>Doesn't watch: on demand</td><td>Not watched</td><td>You + "Sent using @Claude"</td><td>Plan support unclear</td></tr>
+              <tr><th scope="row">Cursor, Devin, ChatGPT, Copilot</th><td>Events API, vendor cloud</td><td>Not missed (cloud)</td><td>Their bot</td><td>Paid products</td></tr>
+              <tr><th scope="row">n8n, a Bolt webhook app</th><td>Events API webhook</td><td>Retried up to 24 h, then lost</td><td>Your choice</td><td>Needs a public URL</td></tr>
+              <tr><th scope="row">Agent checks on a timer</th><td>A model turn per check</td><td>Re-read or missed</td><td>You</td><td>Yes, but costs tokens all day</td></tr>
             </tbody>
           </table>
         </div>
-        <p class="small"><a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/COMPARISON.md">Full comparison with about 20 tools, and when not to use Doorbell</a></p>
+        <ul class="benefits">
+          <li><h3>A server that never misses</h3><p>Run it on an always-on box. Reboots, crashes and dropped connections lose nothing: cursors catch up, leases redeliver, stuck items notify you.</p></li>
+          <li><h3>One coordinator, many experts</h3><p>A coordinator agent listens broadly and applies your reply policy; project agents register with narrower subscriptions or answer when it asks them.</p></li>
+          <li><h3>Agents talking to agents</h3><p>When two people run Doorbell, one agent's reply wakes the other's. Experimental: add stop rules and start with drafts.</p></li>
+          <li><h3>Free Slack, no webhooks</h3><p>No public URL, no paid feature, one of the ten app slots. Slack's 2025 history rate cut doesn't apply to internal apps like this one.</p></li>
+        </ul>
+        <div class="callout notfor" id="not-for">
+          <h3>When not to use it</h3>
+          <ul class="rules">
+            <li><strong>You need replies within seconds.</strong> Polling means about 30 seconds of latency.</li>
+            <li><strong>You want a team bot everyone @mentions.</strong> Doorbell answers as you, for one person per daemon.</li>
+            <li><strong>No machine of yours is ever on.</strong> It runs on your laptop or a box you own. If it is off it catches up later, but it does not answer meanwhile.</li>
+            <li><strong>You need search, files or canvases.</strong> Only messages are watched.</li>
+          </ul>
+        </div>
+        <p class="small"><a href="https://github.com/mraj602/agent-doorbell/blob/main/docs/COMPARISON.md">Full comparison, use cases and sources</a></p>
       </div>
     </section>
 
