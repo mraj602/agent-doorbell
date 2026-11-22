@@ -48,6 +48,11 @@ hand batches to an agent session that is already running.
   That event is dropped unread, isn't stored and isn't acknowledged. Watching continues by
   polling. Socket Mode stays closed while no agent is live.
 
+### Fixed
+
+- A conversation that appears between two refreshes of the conversation list is read from
+  before the previous refresh, so its first messages aren't skipped when a refresh runs late.
+
 ### Changed
 
 - Cadence: a conversation or thread is hot (read every 30 s) from new activity until nothing

@@ -337,6 +337,7 @@ class Daemon:
     # ---------- conversation list + poll set ----------
     async def refresh_convlist(self, identity):
         first = not self.q1("SELECT 1 FROM conv WHERE identity=? LIMIT 1", identity)
+        previous = self.last_convlist.get(identity)
         self.last_convlist[identity] = time.time()
         chans = []
         cursor = None
@@ -347,9 +348,13 @@ class Daemon:
             cursor = (d.get("response_metadata") or {}).get("next_cursor")
             if not cursor:
                 break
-        # A conversation that appears after the first load is new: read it from slightly
-        # before this refresh so its first messages aren't skipped.
-        new_cursor = None if first else f"{time.time() - 2 * self.cfg['convlist_every']:.6f}"
+        # A conversation that appears after the first load is new: read it from before the
+        # previous refresh (when it wasn't listed yet), so its first messages aren't skipped even
+        # when this refresh ran late.
+        since = time.time() - 2 * self.cfg["convlist_every"]
+        if previous:
+            since = min(since, previous - self.cfg["convlist_every"])
+        new_cursor = None if first else f"{since:.6f}"
         for c in chans:
             kind = "im" if c.get("is_im") else "mpim" if c.get("is_mpim") else \
                 "private" if c.get("is_private") else "channel"
