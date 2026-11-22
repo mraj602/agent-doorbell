@@ -198,16 +198,21 @@ def build_parser():
     ds.add_argument("--handoff", metavar="CMD",
                     help="first hand each new batch (JSON on stdin) to this shell command, e.g. "
                          "'wy peers send tag:slack-orchestrator --one --stdin'; the command after -- "
-                         "runs only when the handoff fails")
+                         "runs only when the handoff fails. Outside a Claude Code session, `wy peers send` "
+                         "needs `wy peers trust doorbell` (Watchyard 1.3.0+); otherwise it exits 4")
     ds.add_argument("--handoff-ok", default="0,8", metavar="CODES",
                     help="exit codes of --handoff that mean handed off (default 0,8)")
-    ds.add_argument("command", nargs=argparse.REMAINDER, help="-- then the command to run")
+    ds.add_argument("command", nargs="*", help="-- then the command to run")
 
     sv = sp.add_parser("service", help="install the daemon (and optionally a dispatcher) as a user service")
     sv.add_argument("action", choices=["install", "uninstall", "print"])
     sv.add_argument("--dispatch", metavar="NAME", help="also manage a dispatcher service for agent NAME")
     sv.add_argument("--dir", help="agent folder for the dispatcher")
-    sv.add_argument("command", nargs=argparse.REMAINDER, help="-- then the dispatcher command")
+    sv.add_argument("--handoff", metavar="CMD", help="the dispatcher hands each batch to this command first "
+                    "(see `doorbell dispatch --handoff`); the command after -- is then optional. For "
+                    "`wy peers send` from a service, run `wy peers trust doorbell` once (Watchyard 1.3.0+)")
+    sv.add_argument("--handoff-ok", metavar="CODES", help="exit codes of --handoff that mean handed off")
+    sv.add_argument("command", nargs="*", help="-- then the dispatcher command")
 
     so = sp.add_parser("socket", help="owner: Socket Mode (Slack pushes messages) for an app only you use")
     so.add_argument("action", choices=["enable", "disable"])
@@ -223,7 +228,7 @@ def build_parser():
     cf.add_argument("value", nargs="?", help="YAML value, e.g. 30, search, [A1, A2]")
 
     sp.add_parser("status", help="daemon state, agents, poll set, API usage").add_argument(
-        "--verbose", action="store_true")
+        "--verbose", action="store_true", help="also show the last 30 audit entries")
     sp.add_parser("doctor", help="check the token, scopes and agent app IDs")
     sp.add_parser("log", help="audit trail").add_argument("--since", type=float, default=86400,
                                                          help="seconds back (default 1 day)")
@@ -265,7 +270,7 @@ def build_parser():
     rv = sp.add_parser("revoke", help="owner: take direct sending away from an agent")
     rv.add_argument("agent")
     sp.add_parser("review", help="owner: go through drafts: approve, edit, reject")
-    dl = sp.add_parser("drafts", help="list drafts as JSON")
+    dl = sp.add_parser("drafts", help="owner: list drafts as JSON")
     dl.add_argument("--all", action="store_true", help="include sent and rejected ones")
     ap = sp.add_parser("approve", help="owner: send a draft")
     ap.add_argument("id", type=int)
@@ -273,13 +278,28 @@ def build_parser():
     rj = sp.add_parser("reject", help="owner: drop a draft")
     rj.add_argument("id", type=int)
 
-    h = sp.add_parser("hook", help="Claude Code hook entry points")
+    h = sp.add_parser("hook", help="internal: entry points for the agent-doorbell plugin's Claude Code hooks")
     h.add_argument("which", choices=["post-tool-use", "stop"])
     return p
 
 
-def main(argv=None):
+def parse_args(argv=None):
+    """Parse argv. For dispatch and service, everything after the first `--` is the agent
+    command. It's split off before argparse sees it, because how argparse matches a `*`
+    positional after another positional differs between Python versions."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    tail = None
+    if argv and argv[0] in ("dispatch", "service") and "--" in argv:
+        i = argv.index("--")
+        argv, tail = argv[:i], argv[i + 1:]
     args = build_parser().parse_args(argv)
+    if tail is not None:
+        args.command = args.command + tail
+    return args
+
+
+def main(argv=None):
+    args = parse_args(argv)
     try:
         run(args)
     except DaemonDown as e:
@@ -309,7 +329,8 @@ def run(args):
                         args.timeout, args.once, handoff=args.handoff, handoff_ok=ok)
     if c == "service":
         from .service import service
-        return service(args.action, args.dispatch, args.dir, strip_dashes(args.command))
+        return service(args.action, args.dispatch, args.dir, strip_dashes(args.command),
+                       handoff=args.handoff, handoff_ok=args.handoff_ok)
     if c == "identity":
         return out(call("identity_add", token_file=args.token_file))
     if c == "login":

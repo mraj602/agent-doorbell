@@ -6,6 +6,26 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-23
+
+### Fixed
+
+- `doorbell service install --dispatch NAME --dir DIR -- <command>`: options after the action
+  (`--dispatch`, `--dir`, `--help`) were taken as part of the command, so only the daemon was
+  installed and `--help` ran the install. They are parsed as options now.
+
+### Added
+
+- `doorbell service install --dispatch NAME --handoff CMD [--handoff-ok CODES]`: a dispatcher
+  service that hands batches off; the command after `--` is optional with `--handoff`.
+
+### Docs
+
+- `--handoff` help and the docs say that `wy peers send` from a dispatcher service needs
+  `wy peers trust doorbell` (Watchyard 1.3.0 or later); without it the handoff exits 4 and the
+  command after `--` runs.
+- Help text for `status --verbose`, `drafts` and the internal `hook` command.
+
 ## [0.4.0] - 2026-11-22
 
 Finds new messages the cheapest way for each person (Socket Mode, search or history), and can
@@ -242,7 +262,8 @@ never posts. Everything below is new.
 - `doorbell doctor` to check the setup.
 - A Slack app manifest (`slack-app-manifest.yaml`) that requests read-only user token scopes.
 
-[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/mraj602/agent-doorbell/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/mraj602/agent-doorbell/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/mraj602/agent-doorbell/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mraj602/agent-doorbell/compare/v0.1.0...v0.2.0
