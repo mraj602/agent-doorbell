@@ -29,13 +29,19 @@ All notable changes to Agent Doorbell are recorded here. The format follows
   conversations and threads, Socket Mode state.
 - A small WebSocket client in the standard library (`doorbell/wsclient.py`), so Socket Mode adds
   no dependency.
+- `doorbell dispatch --handoff CMD`: hand each new batch (JSON on stdin) to a session that is
+  already running, for example through Watchyard (`wy peers send tag:<tag> --one --stdin`),
+  and run the usual command only when the handoff fails (`--handoff-ok`, default `0,8`). A
+  handed-off batch is sent once and stays claimed until it is resolved or its lease runs out.
+- `doorbell inbox --claim` can return only the items it just claimed, and `wait` can wake for
+  new items only (used by `--handoff`).
 
 ### Security
 
 - Socket Mode turns itself off (desktop alert, audit entry) when Slack reports a second open
   connection on two connects in a row, or delivers an event that isn't authorized for you alone.
-  That event is dropped unread, isn't stored and isn't acknowledged. Watching continues by polling. Socket Mode stays closed
-  while no agent is live.
+  That event is dropped unread, isn't stored and isn't acknowledged. Watching continues by
+  polling. Socket Mode stays closed while no agent is live.
 
 ### Changed
 
@@ -48,7 +54,6 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 - A sweep that can't vouch for a gap (more matches than its page cap, or the first sweep after
   history polling or a restart) is followed by one read of each watched conversation from its
   cursor, so nothing is skipped.
-
 - Project page: describes every feature and the logic in plain terms (watching, agents,
   replying, sign-in, the three Slack app layouts, the security model, when not to use it),
   without version labels. The setup screenshot shows `doorbell login`.

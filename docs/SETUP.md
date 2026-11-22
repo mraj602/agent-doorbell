@@ -468,6 +468,39 @@ cd ~/doorbell-agents/main && claude "/agent-doorbell:listen"
 
 Approve its `doorbell` commands when asked, or allow `Bash(doorbell *)` in your settings.
 
+**D. Hand off to a session that is already running, with a fallback.** A fresh `claude -p`
+starts with no context. If you keep a long-running agent session (on this or another machine),
+the dispatcher can hand each new batch to it first, and start `claude -p` only when that fails:
+
+```bash
+doorbell dispatch --name main --dir ~/doorbell-agents/main \
+  --handoff 'wy peers send tag:slack-orchestrator --one --stdin' \
+  -- claude -p "/agent-doorbell:handle"
+```
+
+- `--handoff` is any shell command. It gets the batch as JSON on stdin
+  (`{"doorbell": 1, "agent": ..., "items": [...]}`, the same items as `doorbell inbox`, with
+  message text and context). The example uses [Watchyard](https://github.com/mraj602/watchyard)
+  peers: the session that ran `wy peers tag add slack-orchestrator` receives it.
+- Exit codes in `--handoff-ok` (default `0,8`: delivered, or queued for an offline machine)
+  mean handed off. Any other exit code (for example nobody holds the tag) runs the command
+  after `--` on the same batch, and the dispatcher log shows why the handoff failed. Without a
+  command after `--`, the batch waits for its lease to run out and is handed off again.
+- Each batch is handed off once. It stays claimed until it is resolved: your reply shows up in
+  Slack, or the receiving agent runs `doorbell ack` (only possible on the same machine). An
+  unresolved batch comes back after `lease` (15 minutes) and is handed off again, up to
+  `max_attempts` times, then becomes `stuck`. So a receiving agent on another machine should
+  post a reply in Slack for every item it handles (a draft doesn't resolve it).
+- The batch carries message text. Where it goes is up to the handoff command; Watchyard sends
+  it through its hub when the session is on another machine.
+- `wy peers send` works only from inside a Claude Code session (it refuses with
+  `not_a_session`, exit 4, otherwise). So for the handoff to happen, start the dispatcher from
+  a Claude Code session (for example in the background from its terminal tool). A dispatcher
+  run as a service, from cron or from a plain terminal always falls back to the command after
+  `--`, which still handles every message.
+- Use `--one` to reach one holder of the tag. Without it every holder gets the batch, and they
+  have to agree among themselves who replies.
+
 **Check:** `doorbell status` shows your agent with `"status": "active"` and `"waiters": 1`,
 and `"state": "POLLING"`. `poll_set` lists the conversations being watched. If you see
 `unknown users` or `unknown channel`, fix the names in `sub.yaml` (you must be a member of
