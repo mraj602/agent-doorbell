@@ -233,3 +233,25 @@ def test_sub_add_remove_changes_routing(env, alice):
     env.wait_items(name)
     env.call("sub", name=name, action="remove", key="users", values=[alice], why="test unfollow")
     assert env.agent(name)["sub"]["users"] == []
+
+
+def test_first_message_of_a_new_dm_is_delivered(env, alice):
+    # The DM appears (and is first read) only after its opening message was sent.
+    name = env.register({"dms": "all"})
+    dm = env.mock.add_dm(alice)
+    env.mock.post(dm, "hi, first message ever", user=alice)
+    items = env.wait_items(name)
+    assert [m["text"] for m in items[0]["messages"]] == ["hi, first message ever"]
+
+
+def test_first_read_skips_history_from_before_watching(env, alice):
+    dm = env.mock.add_dm(alice)
+    env.mock.post(dm, "old news", user=alice)
+    import time
+    time.sleep(0.05)
+    name = env.register({"dms": "all"})
+    env.mock.post(dm, "fresh", user=alice)
+    items = env.wait_items(name)
+    time.sleep(0.5)
+    assert [m["text"] for it in env.items(name) for m in it["messages"]] == ["fresh"]
+    assert items

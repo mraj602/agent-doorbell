@@ -24,6 +24,9 @@ from mock_slack import MockSlack  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 FAST = {"poll_tick": 0.2, "cadence_hot": 0.2, "cadence_warm": 0.2, "cadence_cold": 0.2,
         "thread_watch_every": 0.2, "convlist_every": 0.5, "lifecycle_every": 0.25, "rate_per_min": 60000,
+        # Slack's per-app pools are lifted like rate_per_min: the shared test env collects many
+        # conversations, and the real 50/min would stretch idle reads past the tests' timeouts.
+        "pool_history": 1e6, "pool_search": 1e6,
         "lease": 1.5, "max_attempts": 2, "notify": False}
 
 

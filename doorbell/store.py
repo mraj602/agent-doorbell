@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS users_cache(
 CREATE TABLE IF NOT EXISTS usergroups_cache(
   group_id TEXT PRIMARY KEY, handle TEXT, members TEXT, fetched_at REAL);
 CREATE TABLE IF NOT EXISTS api_calls(ts REAL, method TEXT, ok INTEGER);
+CREATE TABLE IF NOT EXISTS detect_state(
+  identity TEXT PRIMARY KEY, sweep_wm REAL, app_token_file TEXT, socket TEXT DEFAULT 'off',
+  socket_note TEXT);
 CREATE TABLE IF NOT EXISTS audit(ts REAL, kind TEXT, agent TEXT, detail TEXT);
 CREATE TABLE IF NOT EXISTS sender(
   identity TEXT PRIMARY KEY, sealed TEXT, scopes TEXT, added_at REAL);
@@ -61,6 +64,9 @@ def connect(path):
     cols = {r[1] for r in db.execute("PRAGMA table_info(identities)")}
     if "mode" not in cols:   # 0.3: 'file' (token file) or 'sealed' (single-token mode, see sending.py)
         db.execute("ALTER TABLE identities ADD COLUMN mode TEXT DEFAULT 'file'")
+    for table in ("conv", "thread_watch"):   # 0.4: when a conversation or thread stops being hot
+        if "hot_until" not in {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN hot_until REAL DEFAULT 0")
     return db
 
 

@@ -32,7 +32,7 @@ your local repos, and usually need paid plans and a Slack admin.
 
 | Tool | Connection | Public URL | Misses messages while down | Replies appear as | Slack Free plan | Cost while idle | Routes to several of your agents | Runs |
 |---|---|---|---|---|---|---|---|---|
-| **Agent Doorbell** | Polling | No | **No** (catches up) | **You**, or "Sent using @Claude" if the agent uses the Slack MCP | Yes (one of the 10 app slots) | **Zero** (no API calls when no agent listens) | **Yes** (subscriptions and queues per agent) | Your machine; MIT, free |
+| **Agent Doorbell** | Socket Mode on your own app, else polling (search or history) | No | **No** (catches up) | **You**, or "Sent using @Claude" if the agent uses the Slack MCP | Yes (one of the 10 app slots) | **Zero** (no API calls when no agent listens) | **Yes** (subscriptions and queues per agent) | Your machine; MIT, free |
 | **OpenClaw** | Socket Mode (or webhook / relay) | No / Yes | Yes (auto-reconnect only, no catch-up documented) | A bot, or you with its user-token mode | Not stated | Zero per message; optional 30-min proactive job | Yes ("bindings") | Your machine; MIT, free |
 | **Hermes Agent**, **ZeroClaw** | Socket Mode | No | Yes (not documented) | A bot | Not stated | Zero | Limited | Your machine; open source |
 | **Claude Code Slack bots** (mpociot, claude-code-slack-channel, …) | Socket Mode | No | Yes (claude-code-slack-channel makes *replies* crash-safe, not missed events) | A bot | Not stated | Zero, but some need an open Claude Code session | Some | Your machine; hobby to early |
@@ -60,7 +60,7 @@ your local repos, and usually need paid plans and a Slack admin.
 | **Free Slack workspace, no webhooks, no missed messages** | **Agent Doorbell** | Zapier (100 tasks/month), Make (polling, reduced rate limit), Devin (works on Free Slack, paid product) | The earlier Claude in Slack app needs paid Slack; Claude Tag needs a Claude Team/Enterprise plan; Socket Mode bots miss messages while down |
 | **Replies should look like you typed them** | **Doorbell sending**, OpenClaw user-token mode, Make user connections | A Slack draft (agent writes it, you send it) | The Slack MCP / Claude connector, Claude, Cursor, Devin, ChatGPT and Copilot are all visibly AI |
 | **Replies should say they're from AI** | **Doorbell with the agent's Slack MCP tool** ("Sent using @Claude"), or Doorbell's `send_footer` | Claude in Slack, Claude Tag | Transparency with your colleagues |
-| **A bot the whole team @mentions; instant answers** | Claude Tag, Devin, Cursor, a Bolt bot | — | Doorbell is one person's watcher, with ~30 s latency |
+| **A bot the whole team @mentions; instant answers** | Claude Tag, Devin, Cursor, a Bolt bot | — | Doorbell is one person's watcher (instant only with Socket Mode on your own app) |
 | **Nothing running on my machine** | Claude Tag routines, Devin, Copilot, Zapier | — | Doorbell needs a machine that is on some of the time (it catches up when it's back) |
 
 ## 4. Use cases in more detail
@@ -68,11 +68,12 @@ your local repos, and usually need paid plans and a Slack admin.
 ### A server that doesn't miss messages
 
 Run `doorbelld` on an always-on box (a home server or a small VM) with
-`doorbell service install`, and the agents next to it with `doorbell dispatch`. Replies
-arrive within about 30 seconds for active conversations. If the box reboots, the daemon picks
-up from its cursors; if an agent crashes mid-item, the lease expires and the item comes back;
+`doorbell service install`, and the agents next to it with `doorbell dispatch`. Messages arrive
+in under a second with Socket Mode on your own app, or within about 30 seconds for active
+conversations when polling. If the box reboots, the daemon picks up from its cursors and a
+search sweep; if an agent crashes mid-item, the lease expires and the item comes back;
 after a few failed attempts it is marked stuck and you get a notification. Nothing depends on
-a WebSocket staying up or on Slack retrying a webhook.
+a WebSocket staying up or on Slack retrying a webhook: the socket only makes delivery faster.
 
 ### A coordinator agent with project agents behind it
 
@@ -140,13 +141,16 @@ Each Doorbell user creates their own app from the manifest in their own workspac
 Doorbell is free and not sold, so it is an internal app and keeps the normal limits. A paid
 or hosted version of Doorbell would be commercial distribution and would change this.
 
-Doorbell budgets its own calls (about 40 polls a minute in total), which is why it suits one
-person's conversations rather than hundreds of busy channels.
+Doorbell budgets its own calls (at most 40 a minute, and a fair share of each Slack pool when
+`team_size` people share one app). With `search:read`, one search call every 2 minutes covers
+every conversation a person is in, so the watch list no longer sets the cost. See
+[design/detection.md](design/detection.md).
 
 ## 7. When not to use Agent Doorbell
 
-- **You need replies within seconds.** Doorbell polls; expect up to ~30 s for active
-  conversations. Use a Socket Mode or Events API bot.
+- **You need replies within seconds on a shared app.** Doorbell is instant only with Socket Mode
+  on an app that is yours alone; on a shared app it polls (about 30 s for active conversations,
+  about 2 minutes for quiet ones). Use your own app, or a Socket Mode or Events API bot.
 - **You want a team bot anyone can @mention.** Doorbell is one person's watcher with one
   person's token. Use Claude Tag, Devin, Cursor or a Bolt bot.
 - **No machine of yours is ever on.** Use a hosted product.

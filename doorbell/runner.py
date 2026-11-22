@@ -5,10 +5,17 @@ no tokens) and starts a short, fresh agent process for each batch of messages. T
 claims the queue, handles it and exits. Any agent CLI with a non-interactive mode works:
 `claude -p`, `codex exec`, `gemini -p`, or your own script.
 
+With --handoff, each new batch is first handed to another command as JSON on stdin, for example
+a live agent session reached through Watchyard (`wy peers send tag:<tag> --one --stdin`). A
+handed-off batch stays claimed: it's resolved when the owner's reply shows up in Slack (or the
+agent runs `doorbell ack`), or comes back after its lease and is handed off again. When the handoff
+fails (nobody holds the tag, the message is refused, ...), the command after -- runs instead.
+
 If a run resolves nothing, the runner backs off exponentially so a broken agent can't burn
 tokens in a loop. Claimed items that a run left unresolved come back after their lease expires
 and become `stuck` after `max_attempts`, which also stops the loop.
 """
+import json
 import os
 import subprocess
 import sys
@@ -49,20 +56,64 @@ def ensure_registered(name, folder):
             time.sleep(3)
 
 
-def dispatch(name, command, folder, timeout, once=False):
-    if not command:
+def hand_off(name, handoff, folder, env, timeout, ok):
+    """Claim only the new items and pipe them to the handoff command.
+    Returns "handed", "empty" (nothing new) or "failed"."""
+    try:
+        items = cli.call("inbox", name=name, claim=True, only_new=True)["items"]
+    except cli.DaemonDown:
+        time.sleep(3)
+        return "empty"
+    if not items:
+        return "empty"
+    seqs = [it["seq"] for it in items]
+    payload = json.dumps({"doorbell": 1, "agent": name, "items": items}, ensure_ascii=False)
+    try:
+        r = subprocess.run(handoff, shell=True, cwd=folder, env=env, input=payload, text=True,
+                           encoding="utf-8", capture_output=True, timeout=min(timeout, 120))
+        # The command's own one-line account (wy prints "delivered to ..." or the refusal on
+        # stdout); stderr when stdout is empty.
+        rc, said = r.returncode, [x for x in (r.stdout.strip() or r.stderr.strip()).splitlines() if x.strip()]
+    except subprocess.TimeoutExpired:
+        rc, said = "timeout", []
+    said = "; ".join(said[-5:])   # a broadcast prints one line per receiver
+    if rc in ok:
+        log(f"handed off {seqs} ({len(payload)} bytes, exit {rc}){': ' + said if said else ''}")
+        return "handed"
+    log(f"handoff failed for {seqs} (exit {rc}){': ' + said if said else ''}")
+    return "failed"
+
+
+def dispatch(name, command, folder, timeout, once=False, handoff=None, handoff_ok=(0, 8)):
+    if not command and not handoff:
         raise SystemExit("error: give the command to run after --, e.g. "
                          'doorbell dispatch -- claude -p "/agent-doorbell:handle"')
     folder = os.path.abspath(folder)
     env = dict(os.environ, DOORBELL_AGENT=name)
     failures = 0
-    log(f"agent {name!r}, folder {folder}, command {command}")
+    log(f"agent {name!r}, folder {folder}, command {command}"
+        + (f", handoff {handoff!r} (ok exit codes {sorted(handoff_ok)})" if handoff else ""))
     ensure_registered(name, folder)
     while True:
-        res = cli.wait(name)
+        res = cli.wait(name, new_only=True) if handoff else cli.wait(name)
         if res.get("deregistered"):
             log("agent was deregistered; exiting")
             return
+        if handoff:
+            outcome = hand_off(name, handoff, folder, env, timeout, handoff_ok)
+            if outcome == "handed":
+                failures = 0
+                if once:
+                    sys.exit(0)
+                continue
+            if outcome == "empty":
+                continue
+            if not command:
+                log("no fallback command after --; the batch comes back when its lease runs out")
+                if once:
+                    sys.exit(1)
+                continue
+            log("running the fallback command")
         before = open_seqs(name)
         log(f"woken: {res.get('pending', 0)} pending, {res.get('unresolved', 0)} unresolved; running")
         started = time.time()

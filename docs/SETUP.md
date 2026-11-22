@@ -143,6 +143,44 @@ shows your identity with `"token": "ok"` and `"missing_scopes": []`.
 **Check (layout B):** `doorbell status` shows your identity with `"mode": "sealed"` and
 `"status": "ok"`, and `"sending"` with `"unlocked": true`.
 
+### Instant delivery, big watch lists and teams
+
+How Doorbell finds new messages depends on your Slack app. Pick the row that fits; the full
+reasoning and numbers are in [design/detection.md](design/detection.md).
+
+| Your situation | Do this | Result |
+|---|---|---|
+| **The Slack app is yours alone** (a paid plan, or a free one with fewer than 10 apps) | Create it from [`slack-app-manifest-personal.yaml`](../slack-app-manifest-personal.yaml), sign in with `doorbell login --search`, then [turn on Socket Mode](#socket-mode-your-own-app) | Messages arrive in under a second, about zero API calls |
+| **A team shares one app** | `doorbell login --search`, then `doorbell config set team_size <people on the app>` | Doorbell reads each watched conversation while the list is short, and switches to one search call every 2 minutes for everything when it isn't |
+| **The app has no `search:read`**, or you are a guest | Plain `doorbell login` | Each watched conversation is read every 2 minutes (30 s while active). Keep watch lists short |
+
+`--search` asks Slack for `search:read` too; the app must list that scope (the manifests do).
+To make it the default: `doorbell config set login_search true`. Whatever you pick, `doorbell
+status` shows `detection.mode` and why.
+
+#### Socket Mode (your own app)
+
+Never on a shared app: Slack hands each event to one open connection, so your messages could
+reach a colleague's Doorbell and theirs yours. On your own app:
+
+1. In the app's settings, **Basic Information → App-Level Tokens → Generate Token and Scopes**:
+   any name, scope `connections:write`. Save the `xapp-...` token in a file only you can read,
+   e.g. `~/.config/doorbell-app-token` (`chmod 600`). Don't paste it into a chat.
+2. Run:
+
+   ```bash
+   doorbell socket enable --app-token-file ~/.config/doorbell-app-token --only-me
+   ```
+
+**Check:** with an agent live, `doorbell status` shows `"mode": "socket"` and
+`"socket": {"setting": "on", "connected": true}`. If Doorbell ever sees a second connection or an
+event for someone else, it turns Socket Mode off (`"setting": "tripped"` with the reason), alerts
+you, and keeps watching by polling. `doorbell socket disable` turns it off by hand.
+
+Sign in with `doorbell login --search` on this app too: on every connect Doorbell catches up on
+missed time with one search call. Without `search:read` it reads each watched conversation once
+instead, which costs more calls for long watch lists.
+
 ### Why a read-only sign-in can return a token that can post
 
 Slack adds up the scopes one person has approved for one app, across **all** of that person's
@@ -430,6 +468,39 @@ cd ~/doorbell-agents/main && claude "/agent-doorbell:listen"
 
 Approve its `doorbell` commands when asked, or allow `Bash(doorbell *)` in your settings.
 
+**D. Hand off to a session that is already running, with a fallback.** A fresh `claude -p`
+starts with no context. If you keep a long-running agent session (on this or another machine),
+the dispatcher can hand each new batch to it first, and start `claude -p` only when that fails:
+
+```bash
+doorbell dispatch --name main --dir ~/doorbell-agents/main \
+  --handoff 'wy peers send tag:slack-orchestrator --one --stdin' \
+  -- claude -p "/agent-doorbell:handle"
+```
+
+- `--handoff` is any shell command. It gets the batch as JSON on stdin
+  (`{"doorbell": 1, "agent": ..., "items": [...]}`, the same items as `doorbell inbox`, with
+  message text and context). The example uses [Watchyard](https://github.com/mraj602/watchyard)
+  peers: the session that ran `wy peers tag add slack-orchestrator` receives it.
+- Exit codes in `--handoff-ok` (default `0,8`: delivered, or queued for an offline machine)
+  mean handed off. Any other exit code (for example nobody holds the tag) runs the command
+  after `--` on the same batch, and the dispatcher log shows why the handoff failed. Without a
+  command after `--`, the batch waits for its lease to run out and is handed off again.
+- Each batch is handed off once. It stays claimed until it is resolved: your reply shows up in
+  Slack, or the receiving agent runs `doorbell ack` (only possible on the same machine). An
+  unresolved batch comes back after `lease` (15 minutes) and is handed off again, up to
+  `max_attempts` times, then becomes `stuck`. So a receiving agent on another machine should
+  post a reply in Slack for every item it handles (a draft doesn't resolve it).
+- The batch carries message text. Where it goes is up to the handoff command; Watchyard sends
+  it through its hub when the session is on another machine.
+- `wy peers send` works only from inside a Claude Code session (it refuses with
+  `not_a_session`, exit 4, otherwise). So for the handoff to happen, start the dispatcher from
+  a Claude Code session (for example in the background from its terminal tool). A dispatcher
+  run as a service, from cron or from a plain terminal always falls back to the command after
+  `--`, which still handles every message.
+- Use `--one` to reach one holder of the tag. Without it every holder gets the batch, and they
+  have to agree among themselves who replies.
+
 **Check:** `doorbell status` shows your agent with `"status": "active"` and `"waiters": 1`,
 and `"state": "POLLING"`. `poll_set` lists the conversations being watched. If you see
 `unknown users` or `unknown channel`, fix the names in `sub.yaml` (you must be a member of
@@ -462,7 +533,7 @@ watcher recognises those replies as the agent's, not yours.
 
 | Command | What it does |
 |---|---|
-| `doorbell status` | DORMANT or POLLING, agents and their states, poll set, API usage, stuck items |
+| `doorbell status` | DORMANT or POLLING, how messages are found (`detection`), agents and their states, poll set, API usage, stuck items |
 | `doorbell log --since 3600` | Audit trail for the last hour: deliveries, resolutions, subscription changes |
 | `doorbell inbox` | What's queued for the agent in this folder |
 | `doorbell sub add users @someone --why "..."` | Listen to someone else too (the agent can do this as well; you get a notification) |
@@ -609,12 +680,18 @@ Options that apply to the agent rather than to what it hears are flags on
 Optional. `config.yaml` in the state folder overrides defaults from
 [`doorbell/config.py`](../doorbell/config.py); unknown keys are rejected. The state folder is
 `~/.local/state/doorbell` on Linux and macOS, `%LOCALAPPDATA%\doorbell` on Windows, or
-`$DOORBELL_HOME` if set. Restart the daemon after changes (`doorbell service install` again
-does that). Common keys:
+`$DOORBELL_HOME` if set. `doorbell config set <key> <value>` edits it safely (it checks the key
+and the value), `doorbell config get` shows every setting, and the running daemon picks up
+changes within seconds. Common keys:
 
 ```yaml
 agent_app_ids: ["A08SF47R6P4"]  # apps whose posts "as you" count as agent replies
-cadence_hot: 30                 # seconds between polls of an active conversation
+detect: auto                    # auto | history | search | socket (docs/design/detection.md)
+team_size: 1                    # people who sign in to the same Slack app (sets your fair share)
+login_search: false             # `doorbell login` also asks for search:read
+cadence_hot: 30                 # seconds between reads of an active (hot) conversation
+cadence_warm: 120               # seconds between reads of an idle one (history mode)
+sweep_every: 120                # seconds between search sweeps (search mode)
 idle_ttl: 21600                 # seconds without contact before an agent goes inactive
 lease: 900                      # seconds an agent has to resolve a claimed item
 max_attempts: 3                 # deliveries before an item is marked stuck
@@ -696,6 +773,11 @@ If you are an AI agent following this guide for a user:
   terminal.
 - If the person has no Client ID, send them to [ORG-SETUP.md](ORG-SETUP.md). Recommend a
   read-only sign-in (layout A) unless they want Doorbell to send replies.
+- **Pick how messages are found** with [the table above](#instant-delivery-big-watch-lists-and-teams):
+  ask whether the Slack app is theirs alone or shared, and how many people sign in to it. Only
+  turn on Socket Mode after the person confirms the app is theirs alone; they create the
+  app-level token and save it in a file themselves. You may run `doorbell socket enable` with
+  their file path and `--only-me` once they have said so, and `doorbell config set team_size N`.
 - **Step 6 is the user's decision.** Ask which level they want (recommend draft or triage),
   and which agent CLI runs the agent. Don't change their harness's permission settings
   yourself; show them the flags and let them choose. Fill in `AGENTS.md` with them: ask who

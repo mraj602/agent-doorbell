@@ -1,7 +1,7 @@
 ---
 name: setup
 description: Set up Agent Doorbell for Slack on this machine, step by step with a check after each step. Installs the doorbell command if missing (after asking), signs the person in to Slack with `doorbell login` (they click Allow; no token is pasted), starts the watcher, creates an agent folder, fills in its instructions, and shows how to run the agent. Use when the user asks to set up, install or configure Agent Doorbell or a Slack watcher for their agent, or runs /agent-doorbell:setup.
-allowed-tools: Bash(command -v doorbell), Bash(doorbell --version), Bash(doorbell status:*), Bash(doorbell doctor), Bash(doorbell login:*)
+allowed-tools: Bash(command -v doorbell), Bash(doorbell --version), Bash(doorbell status:*), Bash(doorbell doctor), Bash(doorbell login:*), Bash(doorbell config get:*)
 ---
 
 Set up Agent Doorbell for this person. Go through the steps in order, run each step's check,
@@ -82,6 +82,18 @@ Manifests are in <https://github.com/mraj602/agent-doorbell/blob/main/>. Turning
 one-way (only Slack support can undo it), so warn them before they add it to an existing app
 that other tools use.
 
+Also ask, one at a time (they decide how Doorbell finds messages in step 4b):
+
+1. **Is this Slack app theirs alone, or do other people sign in to it?** If they are creating
+   one just for themselves (a paid plan, or a free plan with fewer than 10 apps), recommend
+   `slack-app-manifest-personal.yaml`: Slack pushes messages in under a second (Socket Mode).
+2. If shared: **how many people sign in to it?** (default 1). Slack's limits are per app, so
+   everyone on it shares them.
+3. **Does the app list the `search:read` user scope?** The current manifests do. If it doesn't
+   and they can edit the app: add it under OAuth & Permissions → User Token Scopes and click
+   Save, **never Reinstall to Workspace** (that grants them every scope on the app, write
+   scopes included).
+
 **Check:** they have a Client ID.
 
 ## 4. Sign in
@@ -90,7 +102,7 @@ Run:
 
 `doorbell login --client-id <Client ID>`
 
-(Omit `--client-id` if `slack_client_id` is in the config or `DOORBELL_SLACK_CLIENT_ID` is
+Add `--search` when the app lists `search:read` (step 3). (Omit `--client-id` if `slack_client_id` is in the config or `DOORBELL_SLACK_CLIENT_ID` is
 set.) It prints a link and opens the browser. Tell the person to click **Allow**. Wait for it
 to finish. It decides by itself: a read-only token is saved in a file (layout A). If the token
 can post, it needs the owner's password in a terminal; if you ran it, it refused and saved
@@ -118,6 +130,27 @@ If it fails: `redirect_uri did not match any configured URIs` means the redirect
 added and saved on the app (the manifests register `http://localhost:8765/`); a busy port
 means pick another registered URL with `--redirect-uri`; `access_denied` means Allow wasn't
 clicked or an admin must approve the app. The setup guide's Troubleshooting table has the rest.
+
+## 4b. How Doorbell finds new messages
+
+Explain in two lines, then do the row that fits (details:
+<https://github.com/mraj602/agent-doorbell/blob/main/docs/design/detection.md>):
+
+- **Their own app (personal manifest):** Socket Mode. The person creates the app-level token
+  themselves: in the app's settings, **Basic Information → App-Level Tokens → Generate Token and
+  Scopes**, scope `connections:write`, then saves the `xapp-...` token in a file only they can
+  read (`chmod 600`, e.g. `~/.config/doorbell-app-token`). Never ask for the token in the chat;
+  ask only for the file path. Then, only after they have confirmed nobody else signs in to the
+  app, run `doorbell socket enable --app-token-file <path> --only-me`.
+- **Shared app:** never Socket Mode, and tell them not to create an app-level token for it. Run
+  `doorbell config set team_size <N>` with the number from step 3 (skip if 1).
+- **No `search:read`:** nothing to do; Doorbell reads each watched conversation. Suggest keeping
+  watch lists short, or adding the scope later and running `doorbell login --search` again.
+
+**Check:** after an agent is registered (step 7), `doorbell status` shows `detection.mode`
+(`socket`, `search` or `history`) and `why`. For Socket Mode, `detection.socket.connected` is
+true. If `detection.socket.setting` is `tripped`, read `note` to the person: Doorbell saw
+another connection or someone else's event and switched to polling.
 
 ## 5. Create the agent folder
 

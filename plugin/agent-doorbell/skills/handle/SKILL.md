@@ -1,6 +1,6 @@
 ---
 name: handle
-description: Claim the Agent Doorbell queue once, handle every queued Slack message by the folder's AGENTS.md, ack each one, then stop. Use in an agent folder (one with a .doorbell-agent file) when asked to handle the doorbell queue, handle Slack messages, or when run as /agent-doorbell:handle, including headless with claude -p.
+description: Claim the Agent Doorbell queue once, handle every queued Slack message by the folder's AGENTS.md, ack each one, then stop. Use in an agent folder (one with a .doorbell-agent file) when asked to handle the doorbell queue, handle Slack messages, or when run as /agent-doorbell:handle, including headless with claude -p, or when a Doorbell batch (JSON with "doorbell": 1) arrives from another session or a peer message.
 ---
 
 Follow `AGENTS.md` in this folder: it says what to do with each message and how you may
@@ -23,6 +23,13 @@ reply. This skill is only the procedure.
    you would have sent in the note.
 3. Stop when every item is resolved. A Stop hook won't let you finish while a claimed item is
    still open.
+
+**A batch handed to you** (a message containing JSON with `"doorbell": 1`, for example from
+`doorbell dispatch --handoff` through Watchyard): the items are already claimed for you, so skip
+step 1 and use the items in that JSON, then do step 2 for each. If `doorbell status` works on
+this machine, ack as usual. If it doesn't (the batch came from another machine), only a reply
+posted in Slack as the owner resolves an item (a draft or a reaction doesn't); an item you
+don't reply to can't be acked from here, and it comes back after its lease and, after a few attempts, is marked stuck for the owner.
 
 Never run `doorbell grant`, `unlock`, `approve`, `review` or `passwd`: they are for the owner.
 To ask for direct sending, run `doorbell request-send --why "..."` once.

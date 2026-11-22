@@ -1,6 +1,6 @@
 {
   "name": "agent-doorbell",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Agent Doorbell for Claude Code: set up the Slack watcher, handle queued Slack messages, and ack them automatically. Unofficial; not affiliated with Slack or Anthropic.",
   "author": {"name": "mraj602"},
   "homepage": "https://github.com/mraj602/agent-doorbell",

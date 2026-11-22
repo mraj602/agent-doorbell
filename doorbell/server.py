@@ -195,7 +195,9 @@ async def op_wait(d, reader, req):
             if not d.q1("SELECT 1 FROM agents WHERE id=?", aid):
                 return {"deregistered": True}
             pending, claimed = open_counts(d, aid)
-            if pending or claimed:
+            # new_only: items already claimed (handed off, leased) don't wake; they come back as
+            # pending if their lease runs out.
+            if pending or (claimed and not req.get("new_only")):
                 return {"pending": pending, "unresolved": claimed}
             ev.clear()
             got = asyncio.ensure_future(ev.wait())
@@ -268,10 +270,16 @@ async def render_item(d, a, it):
 
 async def op_inbox(d, req):
     a = await d.touch(req["name"])
+    new = None
+    if req.get("claim") and req.get("only_new"):
+        # Just the items this call claims (for handing a batch off exactly once).
+        new = {r["seq"] for r in d.q("SELECT seq FROM items WHERE agent_id=? AND state='pending'", a["id"])}
     if req.get("claim"):
         d.db.execute("UPDATE items SET state='claimed', attempts=attempts+1, lease_until=?, updated_at=? "
                      "WHERE agent_id=? AND state='pending'", (time.time() + d.cfg["lease"], time.time(), a["id"]))
     rows = d.q("SELECT * FROM items WHERE agent_id=? AND state IN ('pending','claimed') ORDER BY seq", a["id"])
+    if new is not None:
+        rows = [r for r in rows if r["seq"] in new]
     return {"agent": a["name"], "items": [await render_item(d, a, it) for it in rows]}
 
 
@@ -323,7 +331,8 @@ async def op_status(d, req):
         "state": "POLLING" if live else "DORMANT",
         "uptime_s": round(now - d.started),
         "api_calls": {"last_1m": calls(60), "last_1h": calls(3600), "since_start": d.api_total},
-        "rate_paused_for_s": max(0, round(d.pause_until - now)),
+        "rate_paused_for_s": max([0] + [round(t - now) for t in d.pause_until.values()]),
+        "detection": {i: detection_dict(d, i) for i in sorted({r["user_id"] for r in d.q("SELECT user_id FROM identities")})},
         "poll_set": sorted(f"{i}:{c}" for i, c in d.polling),
         "identities": [identity_dict(d, r) for r in d.q("SELECT * FROM identities")],
         "agents": [agent_dict(d, a) for a in d.q("SELECT * FROM agents ORDER BY name")],
@@ -332,6 +341,29 @@ async def op_status(d, req):
     }
     if req.get("verbose"):
         out["recent_audit"] = [dict(r) for r in d.q("SELECT * FROM audit ORDER BY ts DESC LIMIT 30")]
+    return out
+
+
+def detection_dict(d, ident):
+    """How this identity's new messages are found right now (docs/design/detection.md)."""
+    from . import detect
+    now = time.time()
+    mode, why = d.modes.get(ident, (None, "no live agents: nothing is watched"))
+    st = d.q1("SELECT * FROM detect_state WHERE identity=?", ident)
+    out = {"mode": mode, "why": why, "configured": d.cfg["detect"], "team_size": d.cfg["team_size"],
+           "history_share_per_min": round(detect.history_share(d), 1),
+           "hot_conversations": d.q1("SELECT count(*) n FROM conv WHERE identity=? AND hot_until>?", ident, now)["n"],
+           "hot_threads": d.q1("SELECT count(*) n FROM thread_watch WHERE identity=? AND hot_until>?", ident, now)["n"]}
+    if mode in ("search", "socket"):
+        out["next_sweep_in_s"] = max(0, round(d.next_sweep.get(ident, 0) - now))
+        out["sweep_every_s"] = round(detect.sweep_interval(d))
+        out["sweep_slowdown"] = d.sweep_slow.get(ident, 1)
+        out["last_sweep"] = d.last_sweep.get(ident)
+    sock = d.sockets.get(ident)
+    if st and st["socket"] != "off":
+        out["socket"] = {"setting": st["socket"], "connected": bool(sock and sock.connected),
+                         "events": sock.events if sock else 0,
+                         "note": st["socket_note"] if st["socket"] == "tripped" else (sock.note if sock else None)}
     return out
 
 
@@ -375,7 +407,11 @@ async def op_doctor(d, req):
             info["token"] = "ok"
             if sl.scopes is not None:
                 info["missing_scopes"] = sorted(REQUIRED_SCOPES - set(sl.scopes))
-                info["unused_scopes"] = sorted(set(sl.scopes) - REQUIRED_SCOPES)
+                info["unused_scopes"] = sorted(set(sl.scopes) - REQUIRED_SCOPES - {"search:read"})
+                info["search"] = ("yes: one search call can cover every conversation (docs/design/detection.md)"
+                                  if "search:read" in sl.scopes else
+                                  "no search:read scope: Doorbell reads each watched conversation; for big watch "
+                                  "lists add search:read to the app and run `doorbell login --search`")
         except Exception as e:
             info["token"] = f"error: {e}"
         apps = d.q("SELECT app_id, count(*) n FROM messages WHERE identity=? AND user=? AND app_id IS NOT NULL "
@@ -383,6 +419,37 @@ async def op_doctor(d, req):
         info["apps_seen_posting_as_you"] = {a["app_id"]: a["n"] for a in apps}
         out["identities"].append(info)
     return out
+
+
+async def op_socket(d, req):
+    """Turn Socket Mode on or off for one identity. On only for an app nobody else uses: see
+    detect.SocketRunner for the checks that turn it off again by themselves."""
+    from . import detect
+    ident = pick_identity(d, req.get("identity"))
+    detect.state(d, ident)
+    if req["action"] == "disable":
+        d.db.execute("UPDATE detect_state SET socket='off', socket_note=NULL WHERE identity=?", (ident,))
+        store.audit(d.db, "socket_disabled", identity=ident)
+        return {"identity": ident, "socket": "off"}
+    if not req.get("only_me"):
+        raise ValueError("Socket Mode is only safe on a Slack app that nobody else signs in to with read access: "
+                         "Slack hands each event to one open connection, so on a shared app your messages could "
+                         "reach someone else's Doorbell and theirs yours. If this app is yours alone, pass --only-me")
+    path = os.path.expanduser(req["app_token_file"])
+    if not os.path.isabs(path):
+        raise ValueError("give the app-level token file as a full path")
+    if os.name != "nt" and os.stat(path).st_mode & 0o077:
+        raise ValueError(f"{path} is readable by other users; run: chmod 600 {path}")
+    token = detect.read_app_token(path)
+    await asyncio.to_thread(Slack(token, d.cfg["slack_api_base"]).post, "apps.connections.open")
+    d.db.execute("INSERT INTO api_calls VALUES(?,?,1)", (time.time(), "apps.connections.open"))
+    d.db.execute("UPDATE detect_state SET socket='on', socket_note=NULL, app_token_file=? WHERE identity=?",
+                 (path, ident))
+    if ident in d.sockets:
+        d.sockets[ident].strikes, d.sockets[ident].note = 0, None
+    store.audit(d.db, "socket_enabled", identity=ident)
+    return {"identity": ident, "socket": "on",
+            "next": "it connects while an agent is live; `doorbell status` shows detection.socket"}
 
 
 async def op_log(d, req):
@@ -398,5 +465,5 @@ async def op_retry(d, req):
 
 OPS = {"identity_add": op_identity_add, "register": op_register, "deregister": op_deregister,
        "sub": op_sub, "inbox": op_inbox, "ack": op_ack, "unresolved": op_unresolved,
-       "status": op_status, "doctor": op_doctor, "log": op_log, "retry": op_retry,
+       "status": op_status, "doctor": op_doctor, "log": op_log, "retry": op_retry, "socket": op_socket,
        **sending.OPS}

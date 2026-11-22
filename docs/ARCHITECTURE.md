@@ -43,7 +43,7 @@ Agent Doorbell splits the job: a deterministic watcher that costs nothing to run
   agent "main" ───┐    │  Registry   identities, agents, subscriptions, status, last_seen                             │
   (Claude Code,   │    │  Lifecycle  active → detached → inactive → purged     (every 10s)                             │
    Codex, ...)    ├────┤  Planner    poll set = ∪ subscriptions of live agents   (empty ⇒ DORMANT, zero API calls)       │──▶ Slack Web API
-                  │    │  Poller     per conversation: adaptive cadence, cursor, thread watermarks, rate budget       │   (read-only user token)
+                  │    │  Detector   history polling, search sweeps or Socket Mode; hot/idle cadence, rate budget  │   (read-only user token)
   agent "qa"  ────┘    │  Router     message → matching agents → per-agent queue (dedupe, merge by thread)            │
    127.0.0.1 + key     │  Queue      at-least-once delivery: claim lease, ack, redelivery, stuck                      │
    (endpoint.json)     │  Store      SQLite (WAL): everything above survives restarts                                 │
@@ -116,17 +116,31 @@ Agent Doorbell splits the job: a deterministic watcher that costs nothing to run
   message it acked), capped at `max_catchup` (default 24h), or from "now" with
   `--resume now`.
 
-## 5. Polling
+## 5. Finding new messages
+
+The full design, with Slack's limits, measurements and the numbers behind each choice, is in
+[design/detection.md](design/detection.md). In short:
 
 - **Poll set** = the conversations matched by the subscriptions of every live agent.
   DMs and group DMs are discovered with `users.conversations` every 5 minutes.
-- **Cadence** per conversation adapts to activity: every 30s if it had a message in the last
-  hour; 2 minutes if today; 10 minutes otherwise, but only when the poll set is too large for
-  the rate budget. Small poll sets are polled at the 30s cadence throughout.
+- **Three modes**, picked per person (`detect: auto`):
+  - **socket:** Slack pushes each message over Socket Mode, for an app only you use
+    (`doorbell socket enable --only-me`). A search sweep catches up on every (re)connect.
+  - **search:** one `search.messages` call every 2 minutes covers every conversation and thread;
+    a match only says where to look, and that conversation is then read with `history`.
+  - **history:** `conversations.history` on each watched conversation, as before.
+  `auto` uses history while the watch list fits this person's share of the app's budget
+  (`team_size` people share one app), search when it doesn't (needs `search:read`), and socket
+  whenever it is enabled and connected.
+- **Cadence:** a conversation or thread with something new is **hot** and is read every 30s until
+  nothing new has arrived for 2 minutes. Idle conversations are read every 2 minutes in history
+  mode (longer when the watch list exceeds the share), and not at all in search and socket mode.
 - **New messages:** `conversations.history` from the conversation's cursor. **Thread replies:**
   a parent's `latest_reply` moving past its watermark triggers `conversations.replies`. Threads
   you posted in are followed for 7 days even after they scroll out of the history window.
-- **Rate budget:** a token bucket of 40 calls a minute per daemon, `Retry-After` honoured.
+- **Rate budget:** a token bucket of 40 calls a minute per daemon, plus a fair share of each
+  Slack pool (`pool / team_size`). `Retry-After` is honoured per method, and rate-limited sweeps
+  slow down (up to 8×).
   A self-created internal app is on Slack's normal tiers (Tier 3, 50+ calls a minute for
   `conversations.history`); Slack's May 2025 1-call-a-minute limit applies to commercially
   distributed apps outside the Marketplace, not to internal apps a workspace member creates.
@@ -418,7 +432,7 @@ References: [Using PKCE](https://docs.slack.dev/authentication/using-pkce),
 
 SQLite in WAL mode at `doorbell.db` in the state folder: `~/.local/state/doorbell` on Linux
 and macOS, `%LOCALAPPDATA%\doorbell` on Windows (override with `DOORBELL_HOME`). Tables:
-`identities`, `agents`, `conv` (cursor and cadence per conversation), `thread_watch`,
+`identities`, `agents`, `conv` (cursor and cadence per conversation), `detect_state` (sweep watermark, Socket Mode setting), `thread_watch`,
 `messages` (7-day cache), `items`, `item_msgs`, `deliveries`, `users_cache`,
 `usergroups_cache`, `api_calls` (24h), `audit`, and for sending `sender` (the sealed token),
 `grants`, `send_requests`, `drafts` and `sent`. The schema is in `doorbell/store.py`. Credentials files from `doorbell login` are in `credentials/` in the state folder (mode 600).
@@ -438,19 +452,21 @@ and macOS, `%LOCALAPPDATA%\doorbell` on Windows (override with `DOORBELL_HOME`).
 | Restart with a sealed identity (single-token mode) | The identity is `locked` (one notification) until `doorbell unlock`, then polling resumes from the cursors. `doorbell lock` does the same on demand. |
 | Backlog not consumed for 15 minutes | Desktop notification: "agent X isn't consuming". |
 
-## 12. Why polling? Comparison with Slack events and webhooks
+## 12. Polling, Socket Mode and webhooks
 
 A common assumption is that push (webhooks) needs a paid plan. It doesn't: as far as Slack's
-documentation shows, the Events API and Socket Mode are not restricted to paid plans. Polling
-was chosen for other reasons:
+documentation shows, the Events API and Socket Mode are not restricted to paid plans. Since 0.4
+Doorbell uses Socket Mode when the Slack app is yours alone, and polling (history or search)
+otherwise. Socket Mode on a shared app would hand one person's events to another person's
+Doorbell, and HTTP events need a public URL. The trade-offs:
 
 | | **Polling with a user token** (Agent Doorbell) | Socket Mode events | HTTP Events API (webhook) | RTM API | Legacy outgoing webhooks |
 |---|---|---|---|---|---|
-| Free Slack plan | Yes | Yes, by the docs (user-scope events over Socket Mode untested) | Yes, by the docs | No new apps | Not available to new apps |
+| Free Slack plan | Yes | Yes (user-scope events over Socket Mode verified on a real workspace) | Yes, by the docs | No new apps | Not available to new apps |
 | Public URL needed | No | No | **Yes** (tunnel or server, signature checks) | No | Yes |
 | Always-on connection | No | **Yes**, a WebSocket that Slack recycles every few hours | Your server must be up | Yes | Your server must be up |
 | Latency | Poll interval (30s for active conversations) | About a second | About a second | About a second | About a second |
-| Catch-up after the laptop was off | **Full**, from cursors | **None documented**: events sent while disconnected are lost | 3 retries over ~5 minutes (optionally hourly for 24h), then lost | None | None |
+| Catch-up after the laptop was off | **Full**, from cursors | **None documented** (Doorbell runs a search sweep on every connect) | 3 retries over ~5 minutes (optionally hourly for 24h), then lost | None | None |
 | Sees your DMs and group DMs | Yes (user token) | Needs user-scope event subscriptions | Needs user-scope event subscriptions | n/a | Public channels only |
 | Rate-limit exposure | Tier 3 per method, budgeted (Slack's 2025 cut for distributed apps doesn't apply to internal apps; see [COMPARISON.md](COMPARISON.md#6-rate-limits)) | None | None | None | None |
 | Extra secrets | One read-only user token | User token + app-level token (`xapp-`) | User token + signing secret | n/a | n/a |
@@ -458,13 +474,13 @@ was chosen for other reasons:
 
 **Pros of polling here:** works on a laptop that sleeps and reboots, loses nothing while
 offline, no public endpoint, one read-only token, simplest setup, and it is DORMANT (zero
-calls) when no agent is listening. **Cons:** up to ~30 seconds of latency, and API calls
-proportional to the number of followed conversations, which caps how much one daemon can
-watch (about 40 polls a minute in total).
+calls) when no agent is listening. **Cons:** up to ~2 minutes of latency for a quiet
+conversation (30 seconds once it is active), and calls that grow with the watch list in history
+mode. Search mode makes the cost one call per sweep, whatever the watch list.
 
-The router doesn't care where messages come from, so Socket Mode can be added later as a
-**wake-up hint** that triggers an immediate poll, with polling kept as the source of truth
-for catch-up. That is on the roadmap.
+**Socket Mode** gives sub-second delivery and about zero calls, but only on your own app. The
+router doesn't care where messages come from: a Socket Mode event is routed exactly like a
+polled message, and polling (a search sweep) stays the source of truth for catch-up.
 
 ## 13. Comparison with other ways to put an agent on Slack
 
@@ -498,19 +514,19 @@ happened. With Agent Doorbell the same day with three real messages costs three 
   Slack support can undo that. With PKCE, refresh tokens last 30 days.
 - **One person per daemon.** Several identities work technically, but each person should
   run their own daemon with their own app and token.
-- **Latency** of up to about 30 seconds for active conversations (longer for quiet ones when
-  the poll set is large).
+- **Latency:** under a second with Socket Mode (your own app). When polling, up to about 30
+  seconds for active conversations and about 2 minutes for quiet ones, longer when many people
+  share one app. See [design/detection.md](design/detection.md).
 - **Draft acks assume** the Slack draft tool takes the same `channel_id` and `thread_ts`
   arguments as `slack_send_message`. If a draft isn't acked by the hook, the agent's explicit
   `doorbell ack ... --outcome drafted` or the lease covers it.
 - **The Claude app ID** `A08SF47R6P4` was observed in one workspace. Run `doorbell doctor`
   after your agent's first reply; it lists the app IDs seen posting as you, and you can set
   `agent_app_ids` in `config.yaml`.
-- **Search, files and canvases** are not watched; only messages.
+- **Files and canvases** are not watched; only messages.
 
 ## 15. Roadmap
 
-- Socket Mode as an optional wake-up hint (lower latency, polling stays for catch-up).
 - `doorbell digest`: a daily summary of escalated and ignored items.
 - An output scan before replies (secrets, internal paths, URL allowlist) for agents with reply access.
 - A hub so a team can share one Slack app with per-person workers. Today a team can already
