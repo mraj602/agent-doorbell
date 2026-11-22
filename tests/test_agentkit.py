@@ -128,12 +128,12 @@ def test_service_dispatcher_with_handoff_needs_no_command(tmp_path):
 
 
 def test_service_and_dispatch_options_after_the_action_are_parsed():
-    from doorbell.cli import build_parser, strip_dashes
-    a = build_parser().parse_args(["service", "install", "--dispatch", "main", "--dir", "x", "--handoff", "wy y",
+    from doorbell.cli import parse_args, strip_dashes
+    a = parse_args(["service", "install", "--dispatch", "main", "--dir", "x", "--handoff", "wy y",
                                    "--", "claude", "-p", "/agent-doorbell:handle"])
     assert (a.dispatch, a.dir, a.handoff) == ("main", "x", "wy y")
     assert strip_dashes(a.command) == ["claude", "-p", "/agent-doorbell:handle"]
-    a = build_parser().parse_args(["dispatch", "--name", "m", "--", "agent", "--flag", "-p", "x"])
+    a = parse_args(["dispatch", "--name", "m", "--", "agent", "--flag", "-p", "x"])
     assert strip_dashes(a.command) == ["agent", "--flag", "-p", "x"]
 
 

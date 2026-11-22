@@ -283,8 +283,23 @@ def build_parser():
     return p
 
 
-def main(argv=None):
+def parse_args(argv=None):
+    """Parse argv. For dispatch and service, everything after the first `--` is the agent
+    command. It's split off before argparse sees it, because how argparse matches a `*`
+    positional after another positional differs between Python versions."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    tail = None
+    if argv and argv[0] in ("dispatch", "service") and "--" in argv:
+        i = argv.index("--")
+        argv, tail = argv[:i], argv[i + 1:]
     args = build_parser().parse_args(argv)
+    if tail is not None:
+        args.command = args.command + tail
+    return args
+
+
+def main(argv=None):
+    args = parse_args(argv)
     try:
         run(args)
     except DaemonDown as e:
