@@ -493,15 +493,15 @@ doorbell dispatch --name main --dir ~/doorbell-agents/main \
   post a reply in Slack for every item it handles (a draft doesn't resolve it).
 - The batch carries message text. Where it goes is up to the handoff command; Watchyard sends
   it through its hub when the session is on another machine.
-- `wy peers send` works only from inside a Claude Code session (it refuses with
-  `not_a_session`, exit 4, otherwise). So for the handoff to happen, start the dispatcher from
-  a Claude Code session (for example in the background from its terminal tool). A dispatcher
-  run as a service, from cron or from a plain terminal always falls back to the command after
-  `--`, which still handles every message. Without a command after `--`, such a dispatcher
-  hands off nothing and every batch ends up `stuck`.
-- As a service, with a handoff command that works outside a session:
-  `doorbell service install --dispatch main --dir ~/doorbell-agents/main --handoff '<cmd>'`
-  (add `-- <command>` for a fallback).
+- `wy peers send` normally works only from inside a Claude Code session (it refuses with
+  `not_a_session`, exit 4, otherwise). With Watchyard 1.3.0 or later, run
+  `wy peers trust doorbell` once on the machine; after that a Doorbell dispatcher can send to
+  `tag:` targets from anywhere, including a service or cron. Without that, start the
+  dispatcher from a Claude Code session (for example in the background from its terminal
+  tool), or it always falls back to the command after `--`. Without a command after `--`, a
+  dispatcher whose handoff can't send hands off nothing and every batch ends up `stuck`.
+- As a service: `doorbell service install --dispatch main --dir ~/doorbell-agents/main
+  --handoff 'wy peers send tag:<tag> --one --stdin'` (add `-- <command>` for a fallback).
 - Use `--one` to reach one holder of the tag. Without it every holder gets the batch, and they
   have to agree among themselves who replies.
 

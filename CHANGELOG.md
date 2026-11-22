@@ -21,8 +21,9 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ### Docs
 
-- `--handoff` help and the runner docs say that `wy peers send` refuses outside a Claude Code
-  session, so a dispatcher service can't hand off through Watchyard.
+- `--handoff` help and the docs say that `wy peers send` from a dispatcher service needs
+  `wy peers trust doorbell` (Watchyard 1.3.0 or later); without it the handoff exits 4 and the
+  command after `--` runs.
 - Help text for `status --verbose`, `drafts` and the internal `hook` command.
 
 ## [0.4.0] - 2026-11-22

@@ -198,8 +198,8 @@ def build_parser():
     ds.add_argument("--handoff", metavar="CMD",
                     help="first hand each new batch (JSON on stdin) to this shell command, e.g. "
                          "'wy peers send tag:slack-orchestrator --one --stdin'; the command after -- "
-                         "runs only when the handoff fails. `wy peers send` only works from inside a Claude "
-                         "Code session (exit 4 otherwise), so start such a dispatcher from a session")
+                         "runs only when the handoff fails. Outside a Claude Code session, `wy peers send` "
+                         "needs `wy peers trust doorbell` (Watchyard 1.3.0+); otherwise it exits 4")
     ds.add_argument("--handoff-ok", default="0,8", metavar="CODES",
                     help="exit codes of --handoff that mean handed off (default 0,8)")
     ds.add_argument("command", nargs="*", help="-- then the command to run")
@@ -209,8 +209,8 @@ def build_parser():
     sv.add_argument("--dispatch", metavar="NAME", help="also manage a dispatcher service for agent NAME")
     sv.add_argument("--dir", help="agent folder for the dispatcher")
     sv.add_argument("--handoff", metavar="CMD", help="the dispatcher hands each batch to this command first "
-                    "(see `doorbell dispatch --handoff`); the command after -- is then optional. Not for "
-                    "`wy peers send`: it refuses outside a Claude Code session, so from a service it always fails")
+                    "(see `doorbell dispatch --handoff`); the command after -- is then optional. For "
+                    "`wy peers send` from a service, run `wy peers trust doorbell` once (Watchyard 1.3.0+)")
     sv.add_argument("--handoff-ok", metavar="CODES", help="exit codes of --handoff that mean handed off")
     sv.add_argument("command", nargs="*", help="-- then the dispatcher command")
 
