@@ -228,7 +228,7 @@ def build_parser():
     cf.add_argument("value", nargs="?", help="YAML value, e.g. 30, search, [A1, A2]")
 
     sp.add_parser("status", help="daemon state, agents, poll set, API usage").add_argument(
-        "--verbose", action="store_true")
+        "--verbose", action="store_true", help="also show the last 30 audit entries")
     sp.add_parser("doctor", help="check the token, scopes and agent app IDs")
     sp.add_parser("log", help="audit trail").add_argument("--since", type=float, default=86400,
                                                          help="seconds back (default 1 day)")
@@ -270,7 +270,7 @@ def build_parser():
     rv = sp.add_parser("revoke", help="owner: take direct sending away from an agent")
     rv.add_argument("agent")
     sp.add_parser("review", help="owner: go through drafts: approve, edit, reject")
-    dl = sp.add_parser("drafts", help="list drafts as JSON")
+    dl = sp.add_parser("drafts", help="owner: list drafts as JSON")
     dl.add_argument("--all", action="store_true", help="include sent and rejected ones")
     ap = sp.add_parser("approve", help="owner: send a draft")
     ap.add_argument("id", type=int)
@@ -278,7 +278,7 @@ def build_parser():
     rj = sp.add_parser("reject", help="owner: drop a draft")
     rj.add_argument("id", type=int)
 
-    h = sp.add_parser("hook", help="Claude Code hook entry points")
+    h = sp.add_parser("hook", help="internal: entry points for the agent-doorbell plugin's Claude Code hooks")
     h.add_argument("which", choices=["post-tool-use", "stop"])
     return p
 
