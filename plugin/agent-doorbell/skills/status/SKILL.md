@@ -17,6 +17,13 @@ allowed-tools: Bash(doorbell status:*), Bash(doorbell log:*), Bash(doorbell doct
    - Pending and stuck items. For stuck items, suggest finding the cause, then
      `doorbell retry <seq>`.
    - API calls in the last hour.
+   - `detection` for each identity: `mode` is how new messages are found (`socket`: Slack
+     pushes them, under a second; `search`: one search call every `sweep_every_s` covers every
+     conversation; `history`: each watched conversation is read) and `why` says why. A
+     `sweep_slowdown` above 1 means Slack rate limited the sweeps (many people share the app; it
+     recovers by itself). If `socket.setting` is `tripped`, Socket Mode was turned off because
+     another connection or someone else's event was seen (`note`); watching continues by
+     polling. Only the owner turns it back on, once the app is theirs alone.
    - Each identity's `mode` (`file`: a read-only token in a file; `sealed`: one token that
      watches and sends, layout B) and `status`. `ok` is watching. `locked` means its token is
      sealed and the daemon restarted (or the owner ran `doorbell lock`): it isn't polled until

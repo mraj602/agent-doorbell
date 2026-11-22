@@ -65,6 +65,27 @@ Two consequences for you:
 If you aren't sure, start with the read-only app. You can add a write app later without
 changing anything for the watcher.
 
+### One app for the team, or one per person?
+
+Slack's rate limits are per app, per workspace: everyone who signs in to one app shares its
+budget. That decides how fast Doorbell can be ([design/detection.md](design/detection.md)):
+
+| | One shared app | One app per person ([`slack-app-manifest-personal.yaml`](../slack-app-manifest-personal.yaml)) |
+|---|---|---|
+| Slack plan | Any (uses 1 of the Free plan's 10 app slots) | Paid, or a Free workspace with slots to spare |
+| Delivery | About 30 s to 2 minutes; slower for large teams | Under a second (Socket Mode) |
+| API calls | Each person takes a fair share (`team_size`) | About zero, and nobody shares limits |
+| Setup | Members only sign in | Each member creates an app and an app-level token |
+
+On a shared app, **don't turn on Socket Mode or create an app-level token**. Slack hands each
+event to one open connection, so one member's messages could reach another member's Doorbell.
+Doorbell refuses Socket Mode without `--only-me` and turns it off by itself if it sees a second
+connection, but the app-level token itself would let its holder receive everyone's events.
+
+For a shared app, tell members how many people use it so they can run
+`doorbell config set team_size <N>`, and keep `search:read` in the app's scopes (the manifests
+include it) so members can sign in with `doorbell login --search`.
+
 ## Create the app
 
 1. Open <https://api.slack.com/apps> and choose **Create New App → From a manifest**.
@@ -73,8 +94,14 @@ changing anything for the watcher.
 4. For layout C, repeat with `slack-app-manifest-sender.yaml` and keep both Client IDs.
 
 The manifests turn on PKCE and register `http://localhost:8765/` as a redirect URL. The app is
-internal: user scopes only, no bot user, no events, no Socket Mode. No reinstall is needed
+internal: user scopes only, no bot user. The shared manifests have no events and no Socket Mode;
+the personal one subscribes to user message events over Socket Mode. No reinstall is needed
 for `doorbell login`: each member's sign-in grants their own token.
+
+**Adding `search:read` to an existing app:** under **OAuth & Permissions → User Token Scopes**
+add `search:read` and save. Don't click **Reinstall to Workspace**: that grants *you* every
+scope on the app, including write scopes if it has any. Members get the scope the next time they
+run `doorbell login --search`.
 
 ## Reuse an existing internal app instead
 

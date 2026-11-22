@@ -199,7 +199,7 @@ def refresh(api_base, creds):
 
 
 def login(client_id, role, redirect_uri=DEFAULT_REDIRECT, team=None, timeout=300, open_browser=True,
-          api_base="https://slack.com/api/", announce=print, with_reactions=True, paste=None):
+          api_base="https://slack.com/api/", announce=print, with_reactions=True, paste=None, extra_scopes=()):
     """The whole browser round trip. Returns credentials (see _creds). Never prints the token.
 
     `paste` is a function that reads one line (like `input`): for a browser on another machine
@@ -207,7 +207,9 @@ def login(client_id, role, redirect_uri=DEFAULT_REDIRECT, team=None, timeout=300
     handed to the same listener, with the same state check."""
     verifier, challenge = pkce_pair()
     state = secrets.token_urlsafe(24)
-    url = authorize_url(client_id, scopes_for(role, with_reactions), redirect_uri, state, challenge, team)
+    url = authorize_url(client_id, scopes_for(role, with_reactions) + [s for s in extra_scopes
+                                                                       if role != "send"],
+                        redirect_uri, state, challenge, team)
     result = {}
 
     def listen():

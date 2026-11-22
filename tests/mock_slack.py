@@ -21,6 +21,8 @@ import base64
 import hashlib
 import json
 import secrets
+import socket
+import struct
 import threading
 import time
 import urllib.parse
@@ -50,6 +52,16 @@ class MockSlack:
         self.revoked = set()       # tokens revoked with auth.revoke
         self.refresh_tokens = {}   # refresh token -> {client_id, user_id, scopes, expires_at}
         self.max_page = None     # cap on page size, to exercise cursor pagination
+        # search.messages: messages show up after search_lag seconds (Slack indexes late), and
+        # thread replies carry ?thread_ts= in their permalink unless search_thread_links is False.
+        self.search_lag = 0.0
+        self.search_thread_links = True
+        # Socket Mode: apps.connections.open hands out a ws:// URL to the server below.
+        self.ws_clients = []     # open client sockets
+        self.ws_acks = []        # envelope_ids acknowledged by clients
+        self.ws_connects = 0
+        self.ws_num_connections = None   # override the count reported in "hello"
+        self._ws_server = None
         self._n = 0
         self._last_ts = 0.0
         self._server = None
@@ -105,6 +117,13 @@ class MockSlack:
         if self._server:
             self._server.shutdown()
             self._server.server_close()
+        if self._ws_server:
+            self._ws_server.close()
+        for c in list(self.ws_clients):
+            try:
+                c.close()
+            except OSError:
+                pass
 
     @property
     def url(self):
@@ -216,7 +235,7 @@ class MockSlack:
             try:
                 if method == "auth.test":
                     return 200, {"ok": True, **fn(params, token)}
-                if method in ("chat.postMessage", "reactions.add"):
+                if method in ("chat.postMessage", "reactions.add", "search.messages"):
                     return 200, {"ok": True, **fn(params, scopes if scopes is not None else self.scopes)}
                 return 200, {"ok": True, **fn(params)}
             except KeyError as e:
@@ -368,7 +387,8 @@ class MockSlack:
         if p.get("oldest"):
             msgs = [m for m in msgs if m["ts"] > p["oldest"]]
         if p.get("latest"):
-            msgs = [m for m in msgs if m["ts"] < p["latest"]]
+            incl = p.get("inclusive") in ("true", "1", True)
+            msgs = [m for m in msgs if m["ts"] < p["latest"] or (incl and m["ts"] == p["latest"])]
         msgs.sort(key=lambda m: m["ts"], reverse=True)
         chunk, more, nxt = self._page(msgs, p, 100)
         return {"messages": [dict(m) for m in chunk], "has_more": more,
@@ -379,13 +399,145 @@ class MockSlack:
         parent = next((m for m in allm if m["ts"] == p["ts"]), None)
         if parent is None:
             raise KeyError("thread_not_found")
-        replies = [m for m in allm if m.get("thread_ts") == p["ts"] and m["ts"] != p["ts"]]
+        if parent.get("thread_ts") and parent["thread_ts"] != parent["ts"]:   # a reply: Slack returns its thread
+            parent = next(m for m in allm if m["ts"] == parent["thread_ts"])
+        replies = [m for m in allm if m.get("thread_ts") == parent["ts"] and m["ts"] != parent["ts"]]
         if p.get("oldest"):
             replies = [m for m in replies if m["ts"] > p["oldest"]]
         replies.sort(key=lambda m: m["ts"])
         chunk, more, nxt = self._page(replies, p, 100)
         return {"messages": [dict(parent)] + [dict(m) for m in chunk], "has_more": more,
                 "response_metadata": {"next_cursor": nxt}}
+
+    def m_search_messages(self, p, scopes):
+        if "search:read" not in scopes:
+            raise KeyError("missing_scope")
+        q = p.get("query") or ""
+        after = q.split("after:", 1)[1].split()[0] if "after:" in q else None
+        cutoff = time.time() - self.search_lag
+        found = []
+        for cid, c in self.channels.items():
+            meta = c["meta"]
+            for m in c["messages"]:
+                if float(m["ts"]) > cutoff:
+                    continue   # not indexed yet
+                if after and time.strftime("%Y-%m-%d", time.gmtime(float(m["ts"]))) <= after:
+                    continue
+                link = f"https://mock.slack.test/archives/{cid}/p{m['ts'].replace('.', '')}"
+                if m.get("thread_ts") and m["thread_ts"] != m["ts"] and self.search_thread_links:
+                    link += f"?thread_ts={m['thread_ts']}&cid={cid}"
+                found.append({"type": "message", "ts": m["ts"], "text": m.get("text", ""), "user": m.get("user"),
+                              "permalink": link,
+                              "channel": {"id": cid, "name": meta.get("name") or meta.get("user"),
+                                          "is_private": bool(meta.get("is_private") or meta.get("is_im")),
+                                          "is_mpim": bool(meta.get("is_mpim"))}})
+        found.sort(key=lambda m: m["ts"], reverse=(p.get("sort_dir", "desc") == "desc"))
+        count, page = int(p.get("count") or 20), int(p.get("page") or 1)
+        pages = max(1, -(-len(found) // count))
+        return {"query": q, "messages": {"matches": found[(page - 1) * count:page * count], "total": len(found),
+                                         "paging": {"count": count, "page": page, "pages": pages,
+                                                    "total": len(found)}}}
+
+    # ---------- Socket Mode ----------
+    def m_apps_connections_open(self, p):
+        if not self._ws_server:
+            self._start_ws()
+        return {"url": f"ws://127.0.0.1:{self._ws_server.getsockname()[1]}/link/?ticket=t{self._n}"}
+
+    def _start_ws(self):
+        srv = socket.socket()
+        srv.bind(("127.0.0.1", 0))
+        srv.listen()
+        self._ws_server = srv
+        threading.Thread(target=self._ws_accept, daemon=True).start()
+
+    def _ws_accept(self):
+        while True:
+            try:
+                c, _ = self._ws_server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._ws_client, args=(c,), daemon=True).start()
+
+    @staticmethod
+    def _ws_frame(text, opcode=1):
+        data = text.encode() if isinstance(text, str) else text
+        n = len(data)
+        head = bytes([0x80 | opcode, n]) if n < 126 else (bytes([0x80 | opcode, 126]) + struct.pack("!H", n)
+                                                          if n < 65536 else bytes([0x80 | opcode, 127]) + struct.pack("!Q", n))
+        return head + data
+
+    def _ws_client(self, c):
+        f = c.makefile("rb")
+        try:
+            head = b""
+            while not head.endswith(b"\r\n\r\n"):
+                head += f.read(1)
+            key = next(ln.split(":", 1)[1].strip() for ln in head.decode().split("\r\n")
+                       if ln.lower().startswith("sec-websocket-key"))
+            accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest())
+            c.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                      b"Sec-WebSocket-Accept: " + accept + b"\r\n\r\n")
+            with self.lock:
+                self.ws_clients.append(c)
+                self.ws_connects += 1
+                n = self.ws_num_connections or len(self.ws_clients)
+            c.sendall(self._ws_frame(json.dumps({"type": "hello", "num_connections": n,
+                                                 "debug_info": {"approximate_connection_time": 3600}})))
+            while True:
+                b1, b2 = f.read(2)
+                n = b2 & 0x7F
+                if n == 126:
+                    n = struct.unpack("!H", f.read(2))[0]
+                elif n == 127:
+                    n = struct.unpack("!Q", f.read(8))[0]
+                mask = f.read(4)
+                data = bytes(x ^ mask[i % 4] for i, x in enumerate(f.read(n)))
+                op = b1 & 0x0F
+                if op == 8:
+                    break
+                if op == 1:
+                    env = json.loads(data)
+                    with self.lock:
+                        self.ws_acks.append(env.get("envelope_id"))
+        except (OSError, ValueError, StopIteration):
+            pass
+        finally:
+            with self.lock:
+                if c in self.ws_clients:
+                    self.ws_clients.remove(c)
+            try:
+                c.close()
+            except OSError:
+                pass
+
+    def emit(self, channel, ts, for_user=None, authorizations=None):
+        """Push the stored message (channel, ts) as a Socket Mode events_api envelope to one open
+        connection, authorized for `for_user` (default: me). Returns the envelope_id, or None."""
+        with self.lock:
+            meta = self.channels[channel]["meta"]
+            m = next(x for x in self.channels[channel]["messages"] if x["ts"] == ts)
+            kind = "im" if meta.get("is_im") else "mpim" if meta.get("is_mpim") else \
+                "group" if meta.get("is_private") else "channel"
+            env_id = f"env-{secrets.token_hex(4)}"
+            env = {"envelope_id": env_id, "type": "events_api", "accepts_response_payload": False,
+                   "payload": {"type": "event_callback", "team_id": self.team_id,
+                               "authorizations": authorizations if authorizations is not None else
+                               [{"user_id": for_user or self.me, "is_bot": False}],
+                               "event": {**m, "channel": channel, "channel_type": kind, "event_ts": ts}}}
+            if not self.ws_clients:
+                return None
+            self.ws_clients[0].sendall(self._ws_frame(json.dumps(env)))
+            return env_id
+
+    def ws_disconnect_all(self):
+        with self.lock:
+            for c in list(self.ws_clients):
+                try:
+                    c.sendall(self._ws_frame(json.dumps({"type": "disconnect", "reason": "refresh_requested"})))
+                    c.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
 
     def m_users_list(self, p):
         chunk, _, nxt = self._page(list(self.users.values()), p, 200)

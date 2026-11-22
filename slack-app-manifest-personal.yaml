@@ -1,0 +1,56 @@
+# Slack app manifest for Agent Doorbell: YOUR OWN watcher app, with Socket Mode.
+#
+# Slack pushes each message to Doorbell the moment it is posted (under a second), and Doorbell
+# makes almost no API calls. Use it only for an app that nobody else signs in to: Slack hands each
+# event to one of an app's open connections, so on a shared app your messages could reach someone
+# else's Doorbell (and theirs yours). Doorbell turns Socket Mode off by itself if it sees another
+# connection or an event for someone else. Shared team app: use slack-app-manifest.yaml instead.
+#
+# Free Slack plans allow 10 apps per workspace; paid plans have no limit.
+#
+# To use it:
+#   1. https://api.slack.com/apps -> Create New App -> From a manifest. Pick your workspace and
+#      paste this file. (Change the name if you like, e.g. "Doorbell - <your name>".)
+#   2. Basic Information -> App-Level Tokens -> Generate Token and Scopes: name it "doorbell",
+#      add the scope connections:write, Generate. Copy the token (xapp-...) into a file only you
+#      can read, e.g. ~/.config/doorbell-app-token (chmod 600). Never paste it into a chat.
+#   3. Copy the Client ID (Basic Information). Run:
+#        doorbell login --search --client-id <Client ID>
+#        doorbell socket enable --app-token-file ~/.config/doorbell-app-token --only-me
+#   4. `doorbell status` shows detection.mode "socket" once an agent is live.
+#
+# Read-only: user token scopes only, no write scope, no bot user. Event subscriptions are user
+# events (messages you can see), delivered over Socket Mode; no request URL, no public URL.
+_metadata:
+  major_version: 1
+  minor_version: 1
+display_information:
+  name: Agent Doorbell (mine)
+  description: Wakes my AI agents the moment a Slack message needs them. Read-only, mine only.
+oauth_config:
+  redirect_urls:
+    - http://localhost:8765/
+  pkce_enabled: true
+  scopes:
+    user:
+      - channels:history
+      - channels:read
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - mpim:history
+      - mpim:read
+      - users:read
+      - usergroups:read
+      - search:read
+settings:
+  event_subscriptions:
+    user_events:
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

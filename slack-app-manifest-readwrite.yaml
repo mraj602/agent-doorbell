@@ -48,6 +48,9 @@ oauth_config:
       - mpim:read
       - users:read
       - usergroups:read
+      # Lets one search call cover every conversation (`doorbell login --search`).
+      # Optional: without it Doorbell reads each watched conversation. docs/design/detection.md
+      - search:read
       - chat:write
       - reactions:write
 settings:
