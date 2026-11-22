@@ -8,7 +8,8 @@ from mock_slack import REQUIRED_SCOPES
 SEARCH = REQUIRED_SCOPES + ["search:read"]
 # Fast sweeps; a conversation stays hot for a short while, then is left to the sweep.
 SWEEPY = {"sweep_every": 0.3, "socket_sweep_every": 0.3, "hot_for": 1.0, "cadence_hot": 0.2,
-          "sweep_overlap": 300}
+          "sweep_overlap": 300,
+          "pool_history": 50, "pool_search": 20}   # Slack's real per-app pools (conftest lifts them)
 
 
 def detection(env):
