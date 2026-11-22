@@ -198,16 +198,21 @@ def build_parser():
     ds.add_argument("--handoff", metavar="CMD",
                     help="first hand each new batch (JSON on stdin) to this shell command, e.g. "
                          "'wy peers send tag:slack-orchestrator --one --stdin'; the command after -- "
-                         "runs only when the handoff fails")
+                         "runs only when the handoff fails. `wy peers send` only works from inside a Claude "
+                         "Code session (exit 4 otherwise), so start such a dispatcher from a session")
     ds.add_argument("--handoff-ok", default="0,8", metavar="CODES",
                     help="exit codes of --handoff that mean handed off (default 0,8)")
-    ds.add_argument("command", nargs=argparse.REMAINDER, help="-- then the command to run")
+    ds.add_argument("command", nargs="*", help="-- then the command to run")
 
     sv = sp.add_parser("service", help="install the daemon (and optionally a dispatcher) as a user service")
     sv.add_argument("action", choices=["install", "uninstall", "print"])
     sv.add_argument("--dispatch", metavar="NAME", help="also manage a dispatcher service for agent NAME")
     sv.add_argument("--dir", help="agent folder for the dispatcher")
-    sv.add_argument("command", nargs=argparse.REMAINDER, help="-- then the dispatcher command")
+    sv.add_argument("--handoff", metavar="CMD", help="the dispatcher hands each batch to this command first "
+                    "(see `doorbell dispatch --handoff`); the command after -- is then optional. Not for "
+                    "`wy peers send`: it refuses outside a Claude Code session, so from a service it always fails")
+    sv.add_argument("--handoff-ok", metavar="CODES", help="exit codes of --handoff that mean handed off")
+    sv.add_argument("command", nargs="*", help="-- then the dispatcher command")
 
     so = sp.add_parser("socket", help="owner: Socket Mode (Slack pushes messages) for an app only you use")
     so.add_argument("action", choices=["enable", "disable"])
@@ -309,7 +314,8 @@ def run(args):
                         args.timeout, args.once, handoff=args.handoff, handoff_ok=ok)
     if c == "service":
         from .service import service
-        return service(args.action, args.dispatch, args.dir, strip_dashes(args.command))
+        return service(args.action, args.dispatch, args.dir, strip_dashes(args.command),
+                       handoff=args.handoff, handoff_ok=args.handoff_ok)
     if c == "identity":
         return out(call("identity_add", token_file=args.token_file))
     if c == "login":

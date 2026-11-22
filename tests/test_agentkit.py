@@ -1,4 +1,5 @@
 """`doorbell init-agent`: pure file generation, tested in-process."""
+import pytest
 import json
 import re
 from pathlib import Path
@@ -112,3 +113,32 @@ def test_service_command_keeps_windows_paths(monkeypatch):
     ns = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
     assert root.find(".//t:Command", ns).text == exe
     assert root.find(".//t:Arguments", ns).text == "-m doorbell daemon"
+
+
+def test_service_dispatcher_with_handoff_needs_no_command(tmp_path):
+    from doorbell import service
+    us = service.units("bot", str(tmp_path), [], handoff="wy peers send tag:x --stdin", handoff_ok="0")
+    argv = us["doorbell-dispatch-bot"]["argv"]
+    i = argv.index("--handoff")
+    assert argv[i + 1] == "wy peers send tag:x --stdin" and argv[i + 2:i + 4] == ["--handoff-ok", "0"]
+    assert "--" not in argv
+    assert "'wy peers send tag:x --stdin'" in service.systemd_unit(us["doorbell-dispatch-bot"])
+    with pytest.raises(SystemExit, match="--handoff"):
+        service.units("bot", str(tmp_path), [])
+
+
+def test_service_and_dispatch_options_after_the_action_are_parsed():
+    from doorbell.cli import build_parser, strip_dashes
+    a = build_parser().parse_args(["service", "install", "--dispatch", "main", "--dir", "x", "--handoff", "wy y",
+                                   "--", "claude", "-p", "/agent-doorbell:handle"])
+    assert (a.dispatch, a.dir, a.handoff) == ("main", "x", "wy y")
+    assert strip_dashes(a.command) == ["claude", "-p", "/agent-doorbell:handle"]
+    a = build_parser().parse_args(["dispatch", "--name", "m", "--", "agent", "--flag", "-p", "x"])
+    assert strip_dashes(a.command) == ["agent", "--flag", "-p", "x"]
+
+
+def test_service_install_help_prints_help_and_installs_nothing(capsys):
+    from doorbell.cli import build_parser
+    with pytest.raises(SystemExit) as e:
+        build_parser().parse_args(["service", "install", "--help"])
+    assert e.value.code == 0 and "--dispatch" in capsys.readouterr().out

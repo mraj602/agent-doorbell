@@ -17,23 +17,24 @@ SYSTEMD_DIR = Path.home() / ".config/systemd/user"
 LAUNCHD_DIR = Path.home() / "Library/LaunchAgents"
 
 
-def units(dispatch, folder, command):
+def units(dispatch, folder, command, handoff=None, handoff_ok=None):
     exe = doorbell_argv()
     out = {"doorbelld": {"desc": "Agent Doorbell watcher (polls Slack only while agents are registered)",
                          "argv": exe + ["daemon"], "cwd": None, "after": None}}
     if dispatch:
-        if not command:
+        if not command and not handoff:
             raise SystemExit("error: --dispatch needs the agent command after --, e.g. "
-                             "-- claude -p \"/agent-doorbell:handle\"")
+                             "-- claude -p \"/agent-doorbell:handle\" (or --handoff CMD)")
         if not folder:
             raise SystemExit("error: --dispatch needs --dir <agent folder>")
         folder = str(Path(folder).expanduser().resolve())
-        exe_path = shutil.which(command[0])
+        exe_path = shutil.which(command[0]) if command else None
         if exe_path:
             command = [exe_path] + command[1:]
+        extra = (["--handoff", handoff] if handoff else []) + (["--handoff-ok", handoff_ok] if handoff_ok else [])
         out[f"doorbell-dispatch-{dispatch}"] = {
             "desc": f"Agent Doorbell dispatcher for agent {dispatch}",
-            "argv": exe + ["dispatch", "--name", dispatch, "--dir", folder, "--"] + command,
+            "argv": exe + ["dispatch", "--name", dispatch, "--dir", folder] + extra + (["--"] + command if command else []),
             "cwd": folder, "after": "doorbelld.service"}
     return out
 
@@ -155,14 +156,14 @@ def wait_for_daemon(seconds=15):
     return False
 
 
-def service(action, dispatch, folder, command):
+def service(action, dispatch, folder, command, handoff=None, handoff_ok=None):
     system = platform.system()
     if system == "Windows":
-        return service_windows(action, dispatch, folder, command)
+        return service_windows(action, dispatch, folder, command, handoff, handoff_ok)
     mac = system == "Darwin"
     if not mac and not shutil.which("systemctl"):
         raise SystemExit("error: no systemd found. Run `doorbell daemon` under your own supervisor instead.")
-    us = units(dispatch, folder, command) if action != "uninstall" else \
+    us = units(dispatch, folder, command, handoff, handoff_ok) if action != "uninstall" else \
         {"doorbelld": None, **({f"doorbell-dispatch-{dispatch}": None} if dispatch else {})}
     for name, u in us.items():
         if mac:
@@ -206,8 +207,8 @@ def service(action, dispatch, folder, command):
             print("Tip: `loginctl enable-linger $USER` keeps user services running when you are logged out.")
 
 
-def service_windows(action, dispatch, folder, command):
-    us = units(dispatch, folder, command) if action != "uninstall" else \
+def service_windows(action, dispatch, folder, command, handoff=None, handoff_ok=None):
+    us = units(dispatch, folder, command, handoff, handoff_ok) if action != "uninstall" else \
         {"doorbelld": None, **({f"doorbell-dispatch-{dispatch}": None} if dispatch else {})}
     task_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "doorbell" / "tasks"
     for name, u in us.items():

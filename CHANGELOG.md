@@ -6,6 +6,22 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `doorbell service install --dispatch NAME --dir DIR -- <command>`: options after the action
+  (`--dispatch`, `--dir`, `--help`) were taken as part of the command, so only the daemon was
+  installed and `--help` ran the install. They are parsed as options now.
+
+### Added
+
+- `doorbell service install --dispatch NAME --handoff CMD [--handoff-ok CODES]`: a dispatcher
+  service that hands batches off; the command after `--` is optional with `--handoff`.
+
+### Docs
+
+- `--handoff` help and the runner docs say that `wy peers send` refuses outside a Claude Code
+  session, so a dispatcher service can't hand off through Watchyard.
+
 ## [0.4.0] - 2026-11-22
 
 Finds new messages the cheapest way for each person (Socket Mode, search or history), and can

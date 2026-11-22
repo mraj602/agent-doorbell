@@ -10,6 +10,9 @@ a live agent session reached through Watchyard (`wy peers send tag:<tag> --one -
 handed-off batch stays claimed: it's resolved when the owner's reply shows up in Slack (or the
 agent runs `doorbell ack`), or comes back after its lease and is handed off again. When the handoff
 fails (nobody holds the tag, the message is refused, ...), the command after -- runs instead.
+`wy peers send` only works from inside a Claude Code session (outside one it exits 4,
+not_a_session), so a dispatcher run as a service or from cron can't hand off through Watchyard:
+start it from a session, or use a handoff command that works anywhere.
 
 If a run resolves nothing, the runner backs off exponentially so a broken agent can't burn
 tokens in a loop. Claimed items that a run left unresolved come back after their lease expires

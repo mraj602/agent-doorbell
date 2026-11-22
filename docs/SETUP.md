@@ -497,7 +497,11 @@ doorbell dispatch --name main --dir ~/doorbell-agents/main \
   `not_a_session`, exit 4, otherwise). So for the handoff to happen, start the dispatcher from
   a Claude Code session (for example in the background from its terminal tool). A dispatcher
   run as a service, from cron or from a plain terminal always falls back to the command after
-  `--`, which still handles every message.
+  `--`, which still handles every message. Without a command after `--`, such a dispatcher
+  hands off nothing and every batch ends up `stuck`.
+- As a service, with a handoff command that works outside a session:
+  `doorbell service install --dispatch main --dir ~/doorbell-agents/main --handoff '<cmd>'`
+  (add `-- <command>` for a fallback).
 - Use `--one` to reach one holder of the tag. Without it every holder gets the batch, and they
   have to agree among themselves who replies.
 
