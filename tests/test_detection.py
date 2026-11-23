@@ -360,3 +360,51 @@ def test_sweep_interval_stretches_with_team_size(make_env):
     until(lambda: detection(env)["mode"] == "search", 10, "search mode")
     # 20 calls/min x 0.75 shared by 60 people: one sweep every 4 minutes each.
     assert detection(env)["sweep_every_s"] == 240
+
+
+# ---------- threads that scrolled out of the history window take turns ----------
+ROTATE = {**SWEEPY, "detect": "history", "history_page": 2, "hot_for": 0.5,
+          "thread_watch_every": 1.0, "thread_recent": 1, "thread_batch": 2}
+
+
+def test_older_threads_take_turns_at_a_fixed_cost(make_env):
+    env = make_env(config=ROTATE)
+    env.add_identity()
+    alice = env.mock.add_user("alice")
+    ch = env.mock.add_channel("busy")
+    name = env.register({"dms": "none", "channels": [ch]})
+    primed(env, ch)
+    parents = [env.mock.post(ch, f"my question {i}", user=env.me) for i in range(8)]
+    for i in range(3):                                   # scroll them all out of the 2-message window
+        env.mock.post(ch, f"chatter {i}", user=alice)
+    until(lambda: env.db().execute("SELECT count(*) FROM thread_watch WHERE channel=? AND mine>0",
+                                   (ch,)).fetchone()[0] == 8, 15, "8 watched threads")
+    time.sleep(1.5)
+    t0 = time.time()
+    time.sleep(4)
+    reads = env.mock.count("conversations.replies", ch, since=t0)
+    # 1 recent thread a second plus 2 older ones a second: about 12, not 8 threads x 4 s = 32.
+    assert reads <= 15, reads
+    # Every older thread still gets its turn, so a reply in the oldest one is found.
+    env.mock.post(ch, "late answer", user=alice, thread_ts=parents[0])
+    its = env.wait_items(name, timeout=20)
+    assert [m["text"] for m in its[0]["messages"]] == ["late answer"]
+
+
+def test_threads_still_in_the_history_window_cost_no_extra_reads(make_env):
+    env = make_env(config={**ROTATE, "history_page": 50})
+    env.add_identity()
+    alice = env.mock.add_user("alice")
+    ch = env.mock.add_channel("quiet")
+    name = env.register({"dms": "none", "channels": [ch]})
+    primed(env, ch)
+    parents = [env.mock.post(ch, f"my question {i}", user=env.me) for i in range(6)]
+    until(lambda: env.db().execute("SELECT count(*) FROM thread_watch WHERE channel=? AND mine>0",
+                                   (ch,)).fetchone()[0] == 6, 15, "6 watched threads")
+    time.sleep(1.5)
+    t0 = time.time()
+    time.sleep(3)
+    assert env.mock.count("conversations.replies", ch, since=t0) == 0
+    env.mock.post(ch, "answer", user=alice, thread_ts=parents[0])   # seen via the parent's latest_reply
+    its = env.wait_items(name)
+    assert [m["text"] for m in its[0]["messages"]] == ["answer"]

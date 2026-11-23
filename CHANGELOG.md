@@ -6,6 +6,20 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-23
+
+### Changed
+
+- Threads you're in that scrolled out of the history window cost a fixed number of reads in
+  history mode, however many there are: the 3 most recently active are read every 2 minutes, and
+  the rest take turns (5 reads per 2 minutes in all, least recently read first). Before, each
+  was read every 2 minutes, so a busy week of threads could use most of the rate budget.
+  `thread_recent` and `thread_batch` in `config.yaml` tune it.
+- Threads are followed for 3 days instead of 7 (`thread_watch_days`).
+- A thread whose parent is still in the conversation's last `history_page` messages is never read
+  on its own: reading the conversation already shows its new replies.
+- `auto` counts threads at that fixed cost when it picks history or search mode.
+
 ## [0.4.2] - 2026-11-23
 
 ### Added
@@ -277,7 +291,8 @@ never posts. Everything below is new.
 - `doorbell doctor` to check the setup.
 - A Slack app manifest (`slack-app-manifest.yaml`) that requests read-only user token scopes.
 
-[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/mraj602/agent-doorbell/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/mraj602/agent-doorbell/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/mraj602/agent-doorbell/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/mraj602/agent-doorbell/compare/v0.3.0...v0.4.0

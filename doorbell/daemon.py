@@ -55,6 +55,8 @@ class Daemon:
         self.polling = set()       # (identity, channel) currently in the poll set
         self.started = time.time()
         self.api_total = 0
+        self.thread_slot = {}      # identity -> when the next rotating (older) thread may be read
+        self.window_oldest = {}    # (identity, channel) -> oldest ts the last history read returned
         self.budget_interval = {}  # identity -> seconds needed to poll its whole set within its share
         self.chans = {}            # identity -> conversations in the poll set
         self.modes = {}            # identity -> (mode, why); see detect.choose
@@ -404,6 +406,9 @@ class Daemon:
         d = await self.api(identity, "conversations.history", channel=ch, limit=self.cfg["history_page"])
         window = d.get("messages", [])
         now = time.time()
+        # Threads whose parent is in this window are seen through the parent's latest_reply;
+        # poll_watched_threads leaves them alone. "0": the whole conversation fits.
+        self.window_oldest[(identity, ch)] = window[-1]["ts"] if window and d.get("has_more") else "0"
         if c["cursor"] is None:
             # First time this conversation is polled: start from "now", remember thread watermarks.
             for m in window:
@@ -454,16 +459,33 @@ class Daemon:
         self.db.execute("UPDATE conv SET cursor=?, last_activity=?, hot_until=?, next_poll=? WHERE identity=? "
                         "AND channel=?", (cursor, act, hot_until, now + self.cadence(hot_until, identity), identity, ch))
 
+    def in_window(self, identity, w):
+        """The thread's parent is among the messages the conversation's last read returned."""
+        oldest = self.window_oldest.get((identity, w["channel"]))
+        return oldest is not None and w["parent_ts"] >= oldest
+
     async def poll_watched_threads(self, identity, chans):
-        """Threads I'm in (or an agent is handling) that have scrolled out of the history window, in
-        history mode; in search and socket mode only threads a sweep made hot."""
+        """Threads I'm in (or an agent is handling) that have scrolled out of the history window.
+
+        Hot threads (new replies lately) are read every cadence_hot in every mode. In history mode
+        also: the thread_recent most recently active threads every thread_watch_every, and the
+        rest in turns, one every thread_watch_every / thread_batch seconds, least recently read
+        first. So the cost stays fixed however many threads are watched. In search and socket
+        mode a sweep or an event makes a thread hot instead."""
         now = time.time()
+        rows = self.q("SELECT * FROM thread_watch WHERE identity=? AND hot_until>? AND next_poll<=? AND expires>?",
+                      identity, now, now, now)
         if self.modes.get(identity, ("history",))[0] == "history":
-            rows = self.q("SELECT * FROM thread_watch WHERE identity=? AND (mine>0 OR hot_until>?) AND next_poll<=? "
-                          "AND expires>?", identity, now, now, now)
-        else:
-            rows = self.q("SELECT * FROM thread_watch WHERE identity=? AND hot_until>? AND next_poll<=? AND expires>?",
-                          identity, now, now, now)
+            cand = [w for w in self.q("SELECT * FROM thread_watch WHERE identity=? AND mine>0 AND "
+                                      "coalesce(hot_until,0)<=? AND expires>?", identity, now, now)
+                    if w["channel"] in chans and not self.in_window(identity, w)]
+            cand.sort(key=lambda w: w["watermark"] or w["parent_ts"], reverse=True)
+            k = self.cfg["thread_recent"]
+            rows += [w for w in cand[:k] if w["next_poll"] <= now]
+            due = sorted((w for w in cand[k:] if w["next_poll"] <= now), key=lambda w: w["next_poll"])
+            if due and now >= self.thread_slot.get(identity, 0):
+                rows.append(due[0])
+                self.thread_slot[identity] = now + self.cfg["thread_watch_every"] / self.cfg["thread_batch"]
         for w in rows:
             if w["channel"] not in chans and not (w["hot_until"] or 0) > now:
                 continue

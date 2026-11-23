@@ -655,7 +655,7 @@ How they share the watcher:
 | `dms` | `all`, `followed`, `none` | Your DMs: all of them, only from people in `users`, or none. |
 | `group_dms` | `true`, `false` | Group DMs you are in. |
 | `mentions_of_me` | `true`, `false` | `@you` in any conversation that is polled. |
-| `threads_im_in` | `true`, `false` | New replies in threads you posted in (tracked for 7 days). |
+| `threads_im_in` | `true`, `false` | New replies in threads you posted in (tracked for 3 days). |
 | `users` | `["@alex", "U012ABCDEF"]` | Followed people. Their DMs (with `dms: followed`) and their messages in `channels` count. |
 | `usergroups` | `["@platform-team"]` | Everyone in the group counts as followed. |
 | `channels` | `["#proj-x"]` | Channels to poll for followed people and mentions. Private channels: you must be a member. |

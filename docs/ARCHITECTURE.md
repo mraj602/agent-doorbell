@@ -80,7 +80,7 @@ Agent Doorbell splits the job: a deterministic watcher that costs nothing to run
   | `dms: all \| followed \| none` | Your DMs: all of them, only from `users`, or none. |
   | `group_dms` | Group DMs you are in. |
   | `mentions_of_me` | `@you` in any conversation that is polled. |
-  | `threads_im_in` | New replies in threads you posted in (tracked for 7 days). |
+  | `threads_im_in` | New replies in threads you posted in (tracked for 3 days). |
   | `users`, `usergroups` | Followed people. In `channels`, only their messages count. |
   | `channels` | Channels to poll for followed people and mentions. |
   | `everyone_in` | Channels where any human's message counts. |
@@ -138,7 +138,12 @@ The full design, with Slack's limits, measurements and the numbers behind each c
   mode (longer when the watch list exceeds the share), and not at all in search and socket mode.
 - **New messages:** `conversations.history` from the conversation's cursor. **Thread replies:**
   a parent's `latest_reply` moving past its watermark triggers `conversations.replies`. Threads
-  you posted in are followed for 7 days even after they scroll out of the history window.
+  you posted in are followed for 3 days even after they scroll out of the history window (the
+  last `history_page` messages, which cost nothing extra). In history mode the 3 most recently
+  active of those are read every 2 minutes, and the rest take turns: 5 reads every 2 minutes in
+  all, least recently read first. So the cost stays fixed however many threads you're in; an
+  older thread is read about every `2 min × count / 5`, and any reply makes it hot. In search
+  and socket mode the sweep or event finds thread replies, so no thread is read on a timer.
 - **Rate budget:** a token bucket of 40 calls a minute per daemon, plus a fair share of each
   Slack pool (`pool / team_size`). `Retry-After` is honoured per method, and rate-limited sweeps
   slow down (up to 8×).
