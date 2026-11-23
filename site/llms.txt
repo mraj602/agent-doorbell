@@ -1,54 +1,32 @@
 # Agent Doorbell for Slack
 
-> A small local daemon that watches Slack with your own user token, with no LLM and no tokens spent while quiet, and wakes your AI agent (Claude Code, Codex, Gemini CLI or any harness) only when a message needs it. MIT licensed, installed with `pipx install agent-doorbell`. Unofficial: not affiliated with Slack, Anthropic or OpenAI.
+> A small local daemon that watches Slack with a read-only token, with no LLM and no tokens spent while quiet, and wakes your AI agent (Claude Code, Codex, Gemini CLI or any agent that can run a command) only when a message needs it. It catches up after downtime, works on free Slack workspaces with no public URL or server, and replies as you or leaves drafts you approve. Linux, macOS and Windows. MIT licensed, installed with `pipx install agent-doorbell`. Unofficial: not affiliated with Slack, Anthropic or OpenAI.
 
-## What it does
+## Get started
 
-- Watching: a plain Python daemon polls Slack. No LLM, no webhooks, Events API, Socket Mode or public URL, so it works on free Slack workspaces. Matching messages go into per-agent queues; an agent claims items with a 15-minute lease and resolves them with an ack; expired leases redeliver, and after 3 attempts an item is stuck and the owner is notified. Every conversation has a cursor, so after downtime, a reboot or a sleeping laptop it catches up; messages are not missed. With no live agent it is DORMANT: zero Slack API calls. Rate budget: 40 calls a minute per daemon, each conversation polled once. Latency is about 30 seconds.
-- Agents: they register themselves (`doorbell register` with a `sub.yaml`). A subscription can say: dms (all, followed, none), group_dms, mentions_of_me, threads_im_in, users, usergroups, channels, everyone_in, allow_bots. `doorbell dispatch` runs one short command per batch. A Claude Code plugin adds skills and hooks that ack automatically. Any agent CLI works with `wait`, `inbox --claim` and `ack`.
-- Replying: the daemon never posts. The agent replies with its own Slack tool (for example the Slack MCP, which shows "Sent using @Claude"), or through Doorbell: `doorbell draft` (the owner approves with `doorbell review` and a password), or `doorbell send` and `doorbell react` for agents the owner granted with `doorbell grant` and the password. Direct sends go only into the conversation of one of the agent's own open items, at most 20 an hour by default, and `@channel`, `@here` and `@everyone` become plain text.
-
-## Signing in
-
-`doorbell login` is Slack OAuth with PKCE and a localhost redirect: no client secret, nobody needs to be an app collaborator, the person clicks Allow once, and the token is never shown. Over SSH, open the link on a laptop and paste back the localhost address it ends on, or tunnel the port with `ssh -L 8765:localhost:8765`. Tokens rotate every 12 hours and are renewed automatically (a refresh token lasts 30 days). `doorbell logout` revokes and forgets them. `doorbell status` shows each identity's mode (file or sealed) and status (ok, locked, needs_login, broken).
-
-## The Slack app plan (three layouts)
-
-Doorbell asks for read scopes only, then decides from what the token can really do. A token that can post is never stored in a plain file.
-
-- A. One read-only app: the token is read-only, in a mode-600 file. Unattended, no password, resumes after a restart. Agents cannot send through Doorbell.
-- B. One app that allows read and write (single-token mode, `doorbell login --send`): one token watches and sends, sealed with the owner's password. After a restart it is locked until `doorbell unlock`, then catches up. Nothing is missed.
-- C. Two apps (a read app and a send app, `doorbell login --send --client-id <send app>`): the watch file stays read-only; the send token is sealed.
-
-Slack adds up the scopes a person approved for one app across all of their tokens for it, until every one is revoked. Approvals are per person. So on one app that allows chat:write, one member can be in A and another in B, and a member who once approved chat:write gets a token that can post, which Doorbell seals or refuses. Admin settings on the app: redirect URL `http://localhost:8765/`, the user token scopes, PKCE on (one-way). "Reinstall to Workspace" grants the installer all configured scopes. The Client ID is not a secret.
-
-## Security model
-
-The password is the boundary for sending. Owner-only commands refuse inside agent sessions. A token that can post never sits in a plain file, and a login-made file token that becomes able to post is revoked and deleted. Credentials files are mode 600. The daemon and the login listener bind 127.0.0.1; the login checks `state`. The daemon never calls an LLM and never writes agent harness settings. Prompt injection is the main risk; limit the agent in its own harness.
-
-## When not to use it
-
-Not for replies within seconds, a team bot everyone @mentions, or setups with no machine of yours running. Only messages are watched, not search, files or canvases.
+1. `pipx install agent-doorbell` (or `uv tool install agent-doorbell`)
+2. `doorbell service install`
+3. `doorbell login --client-id <Client ID>`: open the link and click Allow; the token is never shown
+4. `doorbell init-agent ~/doorbell-agents/main --owner "Your Name"`, and for Claude Code `/plugin marketplace add mraj602/agent-doorbell` then `/plugin install agent-doorbell@agent-doorbell`
 
 AI agents helping someone set it up: follow the setup guide, run its check after every step, and never ask for the Slack token in chat (`doorbell login` signs in in the browser; the person clicks Allow).
 
-## Setup
+## Details (on GitHub)
 
-- [Setup guide (written so an agent can follow it)](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/SETUP.md): install, Slack app, sign in, watcher, agent folder, permission level, run, test
-- [Slack app setup for a workspace (admins)](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/ORG-SETUP.md)
-- [Claude Code plugin](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/plugin/agent-doorbell/README.md): `/plugin marketplace add mraj602/agent-doorbell`, then `/plugin install agent-doorbell@agent-doorbell`
-- [Setup skill](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/plugin/agent-doorbell/skills/setup/SKILL.md)
-
-## Docs
-
-- [Architecture, security model and Slack access logic](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/ARCHITECTURE.md)
-- [Comparison with other tools](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/COMPARISON.md)
+- [Setup guide (written so an agent can follow it)](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/SETUP.md): install, sign-in (including over SSH), watcher, agent folder, permission level, sending, test
+- [Slack app setup for a workspace (admins)](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/ORG-SETUP.md): the app, layouts, sharing the Client ID
+- [Architecture, security model and limits](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/ARCHITECTURE.md)
+- [Comparison with other tools, and when not to use it](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/COMPARISON.md)
 - [Running agents for days](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/docs/RUNNING.md)
-- Slack app manifests: [read-only](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/slack-app-manifest.yaml), [read and write](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/slack-app-manifest-readwrite.yaml), [send app](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/slack-app-manifest-sender.yaml)
+- [Claude Code plugin](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/plugin/agent-doorbell/README.md)
+- [README](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/README.md)
+
+## Good to know
+
+Messages reach the agent in under a second with Socket Mode on a Slack app only you use; when polling, within about 30 seconds in active conversations and about 2 minutes in quiet ones. You can also talk to your agent from your own self-DM (`self_channels`), and the dispatcher can hand batches to an already running agent session. Not for a team bot everyone @mentions, or setups with no machine of yours running. Only messages are watched, not search, files or canvases. Prompt injection is the main risk; limit the agent in its own harness.
 
 ## Optional
 
-- [README](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/README.md)
 - [Changelog](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/CHANGELOG.md)
 - [PyPI](https://pypi.org/project/agent-doorbell/)
 - [Security policy](https://raw.githubusercontent.com/mraj602/agent-doorbell/main/SECURITY.md)

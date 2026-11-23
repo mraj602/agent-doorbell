@@ -45,9 +45,15 @@ your agent ◀── doorbell wait (blocks, costs nothing) ───────
   plan.
 - **Any agent, any OS.** Linux, macOS and Windows. Agents register themselves and use three
   commands: `wait`, `inbox --claim` and `ack`. Claude Code gets a plugin with a guided
-  `/agent-doorbell:setup`, handle and listen skills, and hooks that ack automatically.
+  `/agent-doorbell:setup`, handle, listen and status skills, and hooks that ack automatically.
+- **Talk to it, or hand it on.** Type to your agent in your own self-DM (`self_channels` in
+  `sub.yaml`), and its replies never loop back. A headless dispatcher can hand each batch to an
+  agent session that is already running, even on another machine (`dispatch --handoff`).
 
 ## Quick start
+
+You need Python 3.10 or newer, a Slack workspace, and the Client ID of a Doorbell Slack app
+(an admin sets one up once; see [docs/ORG-SETUP.md](docs/ORG-SETUP.md)).
 
 ```bash
 pipx install agent-doorbell              # or: uv tool install agent-doorbell
@@ -114,6 +120,20 @@ in layout B.
 | **C. Two apps**: read-only file token, plus a sealed token from a write app (`doorbell login --send --client-id <write app>`) | 2 different | Yes | Watching resumes by itself; sending needs `doorbell unlock` |
 
 A token that can post is never stored in a plain file: it is sealed with your password.
+To choose instead of letting Doorbell decide, pass `--for watch`, `--for send` or `--for both`.
+
+### How sign-in works
+
+`doorbell login` is Slack OAuth with PKCE and a localhost redirect (`http://localhost:8765/`):
+no client secret, nobody needs to be an app collaborator, you click Allow once, and the token
+is never shown. The login listener binds 127.0.0.1 and refuses any response whose `state` does
+not match. Over SSH, open the link on a laptop and paste back the localhost address it ends
+on, or tunnel the port with `ssh -L 8765:localhost:8765` (see
+[SETUP](docs/SETUP.md#on-a-server-over-ssh-or-headless)). Tokens rotate every 12 hours and are
+renewed automatically; if one can't be renewed, run `doorbell login` again (cursors are kept).
+`doorbell logout` revokes and forgets them. `doorbell status` shows each identity's mode
+(file or sealed) and status (`ok`, `locked`, `needs_login` or `broken`). The app settings an
+admin needs are in [docs/ORG-SETUP.md](docs/ORG-SETUP.md).
 
 ## What the agent may do
 
@@ -127,6 +147,19 @@ You choose, in your agent's own permissions (see [SETUP step 6](docs/SETUP.md#6-
 
 Or let Doorbell hold the send policy: give the agent only `Bash(doorbell *)`; it writes drafts you approve with `doorbell review`, and sends directly only after `doorbell grant`. See [Sending through Doorbell](docs/SETUP.md#sending-through-doorbell-optional).
 
+## Commands
+
+| For | Commands |
+|---|---|
+| Setup | `login`, `logout`, `service install` / `uninstall`, `init-agent`, `identity add` (hand-made token), `socket` (Socket Mode), `config` |
+| Checking | `status`, `doctor`, `log`, `retry` (re-queue stuck items) |
+| Agents | `register`, `deregister`, `sub`, `wait`, `inbox --claim`, `ack`, `dispatch` (headless runner, optional `--handoff`) |
+| Agents replying through Doorbell | `draft`, `send`, `react`, `request-send`, `drafts` |
+| Owner, in a terminal | `review` (approve, edit or reject drafts; or `approve` / `reject` one), `grant`, `revoke`, `unlock`, `lock`, `passwd`, `sender` |
+
+`doorbell <command> --help` shows the options. Commands that ask for the sending password
+refuse to run inside an agent session; `lock` and `revoke` only take power away, so they don't.
+
 ## How it compares
 
 | | Agent Doorbell | Agent checks Slack on a timer | Hosted bot + LLM API |
@@ -136,6 +169,23 @@ Or let Doorbell hold the send policy: give the agent only `Bash(doorbell *)`; it
 | Your repos and tools | yes | yes | no |
 | Infrastructure | a local daemon | none | server, public URL or socket, API key |
 | Catches up after downtime | yes | no | depends |
+
+### Against the main alternatives
+
+Facts from [docs/COMPARISON.md](docs/COMPARISON.md), researched in November 2026 from each
+project's own docs. Products change quickly, so check the linked docs there before you rely on
+a detail. "—" means the vendor's docs don't say.
+
+| | Agent Doorbell | OpenClaw, Hermes Agent (self-hosted Socket Mode bots) | Claude in Slack, Cursor, Devin, ChatGPT, Copilot (hosted bots) | Slack MCP / agent's own Slack tool on a timer | n8n, Zapier, Make |
+|---|---|---|---|---|---|
+| How it hears about messages | Polling with cursors | Socket Mode WebSocket | Events API into the vendor's cloud | On demand: the agent decides to look | n8n: Events API; Zapier: mostly instant webhook; Make: polling (15 min by default) |
+| Tokens while idle | **Zero** (no API calls when no agent listens) | Zero (OpenClaw has an optional 30-minute proactive job) | Zero; billed per use | A model turn per check, all day | Per workflow run, task or credit |
+| Misses messages while down | **No**, it catches up | Yes (no catch-up documented) | No (vendor cloud) | Not watched at all | n8n: after the retry window; Zapier: no (cloud); Make: likely caught up |
+| Replies as | **You**, or drafts for you ("Sent using @Claude" if the agent uses the Slack MCP) | A bot (OpenClaw can use a user token) | Their bot app | You, with a "Sent using @Claude" footer that can't be turned off | Bot or user token; Zapier: the Zapier app |
+| Needs a public URL or server | **No**, a local daemon | No | No | No | n8n (self-hosted): yes; Zapier and Make: no, they run in the cloud |
+| Free Slack plan | **Yes** (one of the 10 app slots) | — | Devin: yes; the earlier Claude in Slack app needs paid Slack; others — | Plan support unclear | Uses an app slot; Zapier: 100 tasks a month free |
+| Works with your local repos and tools | **Yes** | Yes, they run on your machine | No, they run in the vendor's cloud | Yes, it is your own agent | — |
+| Routes to several of your own agents | **Yes**, a subscription and queue per agent | OpenClaw: yes ("bindings"); Hermes: limited | No | No | Workflow branches, paths or routers |
 
 Most self-hosted Slack agents (OpenClaw, Hermes Agent, Claude Code Slack bots) keep a Socket
 Mode WebSocket open and lose messages sent while it's down; hosted bots (Claude in Slack,

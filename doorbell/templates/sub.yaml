@@ -9,3 +9,4 @@ usergroups: []        # e.g. ["@platform-team"]: everyone in the group counts as
 channels: []          # e.g. ["#proj-x"]: messages from followed users and mentions count
 everyone_in: []       # channels where any human's message counts
 allow_bots: []        # bot IDs whose messages count, e.g. ["B012ABCDEF"]
+self_channels: []     # where what YOU type is for the agent, e.g. your self-DM ["D012SELFDM"]
