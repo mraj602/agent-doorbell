@@ -6,6 +6,8 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-23
+
 ### Changed
 
 - Threads you're in that scrolled out of the history window cost a fixed number of reads in
@@ -289,7 +291,8 @@ never posts. Everything below is new.
 - `doorbell doctor` to check the setup.
 - A Slack app manifest (`slack-app-manifest.yaml`) that requests read-only user token scopes.
 
-[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/mraj602/agent-doorbell/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/mraj602/agent-doorbell/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/mraj602/agent-doorbell/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/mraj602/agent-doorbell/compare/v0.3.0...v0.4.0
