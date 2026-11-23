@@ -15,3 +15,7 @@ Follow `AGENTS.md` in this folder for what to do with messages. This skill is on
 4. Go back to step 2.
 
 Keep your own chat output to one short line per batch.
+
+If this session is also the receiver of `doorbell dispatch --handoff` batches, ask the user to
+pin it (Ctrl+T in `claude agents`) so it isn't retired for being idle. Don't edit Claude Code's
+files or settings yourself.

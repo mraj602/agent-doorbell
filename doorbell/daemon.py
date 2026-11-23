@@ -63,6 +63,7 @@ class Daemon:
         self.next_sweep = {}       # identity -> time of the next search sweep
         self.sweep_slow = {}       # identity -> sweep slow-down factor after rate limits (1..8)
         self.last_sweep = {}
+        self.handoff_health = {}   # agent name -> last handoff ok/failure, reported by its dispatcher
         self.verify = {}           # identity -> {(channel, ts): lo} search matches to confirm
         self.sockets = {}          # identity -> detect.SocketRunner
         self.search_ok = {}        # identity -> last known "token has search:read" (see detect.has_search)

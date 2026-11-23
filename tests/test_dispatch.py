@@ -190,6 +190,18 @@ def test_failed_handoff_runs_the_fallback(env, alice, tmp_path):
     assert env.items(name) == []
 
 
+def test_failed_handoff_is_visible_in_status_with_a_pin_hint(env, alice, tmp_path):
+    dm = env.mock.add_dm(alice)
+    name = env.register({"dms": "all"})
+    env.mock.post(dm, "x", user=alice)
+    env.wait_items(name)
+    cmd, _ = receiver(tmp_path, code=7)
+    r = env.cli("dispatch", "--name", name, "--dir", tmp_path, "--once", "--handoff", cmd, check=False)
+    assert "pin it" in r.stdout and "ended for being idle" in r.stdout
+    h = env.agent(name)["handoff"]
+    assert h["last_failure"] and "exit 7" in h["last_failure_reason"] and h["last_ok"] is None
+
+
 def test_failed_handoff_without_fallback(env, alice, tmp_path):
     dm = env.mock.add_dm(alice)
     name = env.register({"dms": "all"})

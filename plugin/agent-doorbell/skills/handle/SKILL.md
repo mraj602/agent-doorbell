@@ -31,6 +31,10 @@ this machine, ack as usual. If it doesn't (the batch came from another machine),
 posted in Slack as the owner resolves an item (a draft or a reaction doesn't); an item you
 don't reply to can't be acked from here, and it comes back after its lease and, after a few attempts, is marked stuck for the owner.
 
+If you are the long-running session that receives these handoffs, ask the user once to pin
+this session (Ctrl+T in `claude agents`) so Claude Code doesn't retire it for being idle and
+leave the tag without a holder. Don't change Claude Code's files or settings yourself.
+
 Never run `doorbell grant`, `unlock`, `approve`, `review` or `passwd`: they are for the owner.
 To ask for direct sending, run `doorbell request-send --why "..."` once.
 

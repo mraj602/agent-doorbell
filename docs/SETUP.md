@@ -502,6 +502,15 @@ doorbell dispatch --name main --dir ~/doorbell-agents/main \
   dispatcher whose handoff can't send hands off nothing and every batch ends up `stuck`.
 - As a service: `doorbell service install --dispatch main --dir ~/doorbell-agents/main
   --handoff 'wy peers send tag:<tag> --one --stdin'` (add `-- <command>` for a fallback).
+- **Keep the receiving session running.** Claude Code retires a background session that is idle
+  with nothing in flight after about an hour (about 8 hours when it is bridged to Remote
+  Control). A receiver that only waits for pushed handoffs looks idle, so it gets retired; then
+  the tag has no holder and every handoff fails ("No session you may message holds tag ...").
+  Pin the session in `claude agents` with Ctrl+T: a pinned session is never idle-retired, and is
+  restarted in place after an update or a crash. A reboot still ends it, and pinning does not
+  bring back a session that was already retired (`claude respawn <id>` does). A fallback command
+  after `--` covers the gap in the meantime. `doorbell status` shows the last handoff success
+  and failure per agent.
 - Use `--one` to reach one holder of the tag. Without it every holder gets the batch, and they
   have to agree among themselves who replies.
 

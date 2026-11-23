@@ -6,6 +6,18 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A failed `--handoff` is easier to diagnose. The dispatcher log says, when the error means
+  nobody holds the tag, that the receiving session may have been ended for being idle and
+  should be pinned. `doorbell status` shows `handoff` per agent (`last_ok`, `last_failure`,
+  `last_failure_reason`; kept in memory, cleared when the daemon restarts).
+
+### Changed
+
+- Docs and the `handle` and `listen` skills now say to pin the session that receives handoffs
+  (Ctrl+T in `claude agents`), because Claude Code retires idle background sessions.
+
 ## [0.4.3] - 2026-11-23
 
 ### Changed

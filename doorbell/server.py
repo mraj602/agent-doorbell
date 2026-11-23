@@ -46,7 +46,8 @@ async def handle(d, reader, writer):
 def agent_dict(d, a):
     counts = {r["state"]: r["n"] for r in d.q("SELECT state, count(*) n FROM items WHERE agent_id=? GROUP BY state",
                                              a["id"])}
-    return {"name": a["name"], "identity": a["identity"], "status": a["status"],
+    return {**({"handoff": d.handoff_health[a["name"]]} if a["name"] in d.handoff_health else {}),
+            "name": a["name"], "identity": a["identity"], "status": a["status"],
             "waiters": d.waiters.get(a["id"], 0), "last_seen": a["last_seen"],
             "idle_ttl": a["idle_ttl"], "resume_policy": a["resume_policy"], "floor_ts": a["floor_ts"],
             "last_acked_ts": a["last_acked_ts"], "sub": json.loads(a["sub_json"] or "{}"), "items": counts}
@@ -464,6 +465,17 @@ async def op_log(d, req):
     return {"log": [dict(r) for r in rows]}
 
 
+async def op_handoff_report(d, req):
+    """A dispatcher says how its last handoff went. Kept in memory (a daemon restart clears it)."""
+    h = d.handoff_health.setdefault(req["name"], {"last_ok": None, "last_failure": None, "last_failure_reason": None})
+    now = time.time()
+    if req.get("ok"):
+        h["last_ok"] = now
+    else:
+        h["last_failure"], h["last_failure_reason"] = now, str(req.get("reason") or "")[:500]
+    return {}
+
+
 async def op_retry(d, req):
     n = d.db.execute("UPDATE items SET state='pending', attempts=0, lease_until=NULL WHERE state='stuck' AND seq IN (%s)"
                      % ",".join("?" * len(req["seqs"])), req["seqs"]).rowcount
@@ -472,5 +484,5 @@ async def op_retry(d, req):
 
 OPS = {"identity_add": op_identity_add, "register": op_register, "deregister": op_deregister,
        "sub": op_sub, "inbox": op_inbox, "ack": op_ack, "unresolved": op_unresolved,
-       "status": op_status, "doctor": op_doctor, "log": op_log, "retry": op_retry, "socket": op_socket,
+       "status": op_status, "doctor": op_doctor, "log": op_log, "retry": op_retry, "handoff_report": op_handoff_report, "socket": op_socket,
        **sending.OPS}
