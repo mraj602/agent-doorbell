@@ -6,12 +6,20 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-23
+
 ### Added
 
 - `self_channels` subscription key: conversations (your self-DM, a private channel with only
   you in it) where the messages you type by hand are delivered to the agent, so you can talk to
   it from Slack. Elsewhere your own messages still resolve items as before. Messages posted
   through an app or by Doorbell are never delivered there, so an agent's replies can't loop.
+
+### Changed
+
+- The website is a shorter, benefits-first landing page, and it and the README now describe
+  Socket Mode, the polling latency, talking to the agent from your self-DM and the handoff.
+  The README's command table lists `socket`, `config`, `approve` and `reject` too.
 
 ## [0.4.1] - 2026-11-23
 
@@ -269,7 +277,8 @@ never posts. Everything below is new.
 - `doorbell doctor` to check the setup.
 - A Slack app manifest (`slack-app-manifest.yaml`) that requests read-only user token scopes.
 
-[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/mraj602/agent-doorbell/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/mraj602/agent-doorbell/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/mraj602/agent-doorbell/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/mraj602/agent-doorbell/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/mraj602/agent-doorbell/compare/v0.2.0...v0.3.0

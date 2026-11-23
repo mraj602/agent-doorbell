@@ -23,7 +23,7 @@ AI agents helping someone set it up: follow the setup guide, run its check after
 
 ## Good to know
 
-Replies arrive within about 30 seconds, not instantly. Not for a team bot everyone @mentions, or setups with no machine of yours running. Only messages are watched, not search, files or canvases. Prompt injection is the main risk; limit the agent in its own harness.
+Messages reach the agent in under a second with Socket Mode on a Slack app only you use; when polling, within about 30 seconds in active conversations and about 2 minutes in quiet ones. You can also talk to your agent from your own self-DM (`self_channels`), and the dispatcher can hand batches to an already running agent session. Not for a team bot everyone @mentions, or setups with no machine of yours running. Only messages are watched, not search, files or canvases. Prompt injection is the main risk; limit the agent in its own harness.
 
 ## Optional
 

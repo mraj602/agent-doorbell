@@ -92,7 +92,7 @@
             <span class="signal-bell" aria-hidden="true"><svg viewBox="40 60 432 400" focusable="false"><path d="M256 96a24 24 0 0 1 24 24v6c58 14 92 62 92 124v62l40 44v24H100v-24l40-44v-62c0-62 34-110 92-124v-6a24 24 0 0 1 24-24z"/><path class="clap" d="M216 404h80a40 40 0 0 1-80 0z"/></svg></span>
           </div>
           <figcaption id="signal-cap" class="signal-labels">
-            <span class="sl-quiet"><b>9:00 to 9:41, quiet.</b> The daemon polls Slack. No model runs, zero tokens.</span>
+            <span class="sl-quiet"><b>9:00 to 9:41, quiet.</b> The daemon watches Slack. No model runs, zero tokens.</span>
             <span class="sl-ring"><b>9:41, @you in #team-builds.</b> The agent wakes, drafts a reply, and sleeps again.</span>
           </figcaption>
         </figure>
@@ -113,7 +113,7 @@
           <li>
             <p class="node"><span>Slack</span><span class="arrow" aria-hidden="true"></span><span class="hot">doorbelld</span></p>
             <h3>Watch</h3>
-            <p>A small local daemon polls Slack with a read-only token. No LLM, so no tokens.</p>
+            <p>A small local daemon watches Slack with a read-only token: instantly over Socket Mode when the Slack app is yours alone, otherwise by polling. No LLM, so no tokens.</p>
           </li>
           <li>
             <p class="node"><span>Per-agent queue</span></p>
@@ -148,6 +148,8 @@
           <li><h3>Any agent</h3><p>Claude Code, Codex, Gemini CLI or anything that can run a command. Claude Code also has a plugin.</p></li>
           <li><h3>Linux, macOS and Windows</h3><p>Install it with <code>pipx</code> or <code>uv</code> and run it as a background service.</p></li>
           <li><h3>Local and private</h3><p>Your messages stay on your machine. No cloud service sits in between.</p></li>
+          <li><h3>Talk to it from Slack</h3><p>Type to your agent in your own self-DM. What you type there reaches it; its replies never loop back.</p></li>
+          <li><h3>Hand off to a live session</h3><p>The dispatcher can pass each batch to an agent session that is already running, even on another machine, and fall back to a fresh run if nobody takes it.</p></li>
         </ul>
       </div>
     </section>
@@ -202,13 +204,13 @@ claude plugin install agent-doorbell@agent-doorbell</code></pre>
     <section id="compare" class="sec" aria-labelledby="compare-h">
       <div class="wrap">
         <h2 id="compare-h">Compared with other ways to put an agent on Slack</h2>
-        <p class="sub">Most self-hosted Slack agents keep a Socket Mode WebSocket open, and messages sent while it's down are lost. Hosted bots don't miss, but answer as a bot, in their cloud, on paid plans. Doorbell polls with cursors, so it catches up.</p>
+        <p class="sub">Most self-hosted Slack agents keep a Socket Mode WebSocket open, and messages sent while it's down are lost. Hosted bots don't miss, but answer as a bot, in their cloud, on paid plans. Doorbell keeps a cursor in every conversation, so it catches up after downtime.</p>
         <div class="tscroll" role="region" aria-label="Comparison with other Slack agent tools" tabindex="0">
           <table class="tbl compare">
             <caption class="vh">How Agent Doorbell compares with other Slack agent tools</caption>
             <thead><tr><th scope="col">Tool</th><th scope="col">Hears messages by</th><th scope="col">Messages sent while it's down</th><th scope="col">Replies appear as</th><th scope="col">Slack Free, no public URL</th></tr></thead>
             <tbody>
-              <tr><th scope="row" class="us">Agent Doorbell</th><td class="us">Polling with cursors</td><td class="us"><strong>Caught up</strong></td><td class="us">You, or "Sent using @Claude" via the Slack MCP</td><td class="us">Yes</td></tr>
+              <tr><th scope="row" class="us">Agent Doorbell</th><td class="us">Socket Mode on your own app, otherwise polling; cursors either way</td><td class="us"><strong>Caught up</strong></td><td class="us">You, or "Sent using @Claude" via the Slack MCP</td><td class="us">Yes</td></tr>
               <tr><th scope="row">OpenClaw, Hermes Agent, ZeroClaw</th><td>Socket Mode WebSocket</td><td>Lost (reconnect only)</td><td>A bot (OpenClaw can post as you)</td><td>No URL needed; plan not stated</td></tr>
               <tr><th scope="row">Claude Code Slack bots</th><td>Socket Mode WebSocket</td><td>Lost</td><td>A bot</td><td>No URL needed; plan not stated</td></tr>
               <tr><th scope="row">Claude in Slack, Claude Tag</th><td>Events API, Anthropic's cloud</td><td>Not missed (cloud)</td><td>The Claude app</td><td>No: paid Slack or a Claude Team plan</td></tr>
@@ -228,7 +230,7 @@ claude plugin install agent-doorbell@agent-doorbell</code></pre>
         <div class="callout notfor" id="not-for">
           <h3>When not to use it</h3>
           <ul class="rules">
-            <li><strong>You need replies within seconds.</strong> Polling means about 30 seconds of latency.</li>
+            <li><strong>You need instant replies on a shared Slack app.</strong> Instant delivery needs Socket Mode on a Slack app only you use. Polling takes about 30 seconds in active conversations and up to about 2 minutes in quiet ones.</li>
             <li><strong>You want a team bot everyone @mentions.</strong> Doorbell answers as you, for one person per daemon.</li>
             <li><strong>No machine of yours is ever on.</strong> It runs on your laptop or a box you own. If it is off it catches up later, but it does not answer meanwhile.</li>
             <li><strong>You need search, files or canvases.</strong> Only messages are watched.</li>
@@ -259,7 +261,7 @@ claude plugin install agent-doorbell@agent-doorbell</code></pre>
           <details><summary>Does it need a paid Slack plan or admin rights?</summary><p>Free plans work. Some workspaces require an admin to approve new apps; if yours does, the install step asks for approval.</p></details>
           <details><summary>Can it send messages for me?</summary><p>Your agent can reply with its own Slack tool, within the permissions you gave it. Or it can write drafts that you approve with <code>doorbell review</code>, and agents you grant with your password can send directly.</p></details>
           <details><summary>What if my laptop was off?</summary><p>Nothing is lost. Doorbell keeps its place in every conversation and catches up when it is back, as far back as Slack's history still shows.</p></details>
-          <details><summary>How fast does it respond?</summary><p>Replies arrive within about 30 seconds, not instantly, because Doorbell polls Slack. It is not for a team bot that everyone @mentions.</p></details>
+          <details><summary>How fast does it respond?</summary><p>In under a second with Socket Mode, when the Slack app is yours alone. Otherwise Doorbell polls: about 30 seconds in active conversations, up to about 2 minutes in quiet ones. It is not for a team bot that everyone @mentions.</p></details>
           <details><summary>Which agents does it work with?</summary><p>Claude Code, Codex, Gemini CLI or any agent that can run a command. Claude Code also has a plugin with a guided setup.</p></details>
           <details><summary>Can a whole team share one daemon?</summary><p>No, it is one person per daemon. Everyone in a workspace can use the same Slack app: each person runs <code>doorbell login</code> and gets their own token.</p></details>
         </div>

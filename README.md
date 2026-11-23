@@ -46,6 +46,9 @@ your agent ◀── doorbell wait (blocks, costs nothing) ───────
 - **Any agent, any OS.** Linux, macOS and Windows. Agents register themselves and use three
   commands: `wait`, `inbox --claim` and `ack`. Claude Code gets a plugin with a guided
   `/agent-doorbell:setup`, handle, listen and status skills, and hooks that ack automatically.
+- **Talk to it, or hand it on.** Type to your agent in your own self-DM (`self_channels` in
+  `sub.yaml`), and its replies never loop back. A headless dispatcher can hand each batch to an
+  agent session that is already running, even on another machine (`dispatch --handoff`).
 
 ## Quick start
 
@@ -148,11 +151,11 @@ Or let Doorbell hold the send policy: give the agent only `Bash(doorbell *)`; it
 
 | For | Commands |
 |---|---|
-| Setup | `login`, `logout`, `service install` / `uninstall`, `init-agent`, `identity add` (hand-made token) |
+| Setup | `login`, `logout`, `service install` / `uninstall`, `init-agent`, `identity add` (hand-made token), `socket` (Socket Mode), `config` |
 | Checking | `status`, `doctor`, `log`, `retry` (re-queue stuck items) |
-| Agents | `register`, `deregister`, `sub`, `wait`, `inbox --claim`, `ack`, `dispatch` (headless runner) |
+| Agents | `register`, `deregister`, `sub`, `wait`, `inbox --claim`, `ack`, `dispatch` (headless runner, optional `--handoff`) |
 | Agents replying through Doorbell | `draft`, `send`, `react`, `request-send`, `drafts` |
-| Owner, in a terminal | `review` (approve, edit or reject drafts), `grant`, `revoke`, `unlock`, `lock`, `passwd`, `sender` |
+| Owner, in a terminal | `review` (approve, edit or reject drafts; or `approve` / `reject` one), `grant`, `revoke`, `unlock`, `lock`, `passwd`, `sender` |
 
 `doorbell <command> --help` shows the options. Commands that ask for the sending password
 refuse to run inside an agent session; `lock` and `revoke` only take power away, so they don't.
