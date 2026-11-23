@@ -54,8 +54,14 @@ DEFAULTS = {
     # open" may be seen in a row before Socket Mode is turned off.
     "socket_sweep_every": 900,
     "socket_max_strikes": 2,
+    # Threads I'm in that have scrolled out of their conversation's last history_page messages
+    # (newer ones are seen for free when the conversation is read). The thread_recent most recently
+    # active are read every thread_watch_every; the rest take turns, thread_batch reads per
+    # thread_watch_every in all, least recently read first. A thread with new replies is hot.
     "thread_watch_every": 120,
-    "thread_watch_days": 7,
+    "thread_watch_days": 3,
+    "thread_recent": 3,
+    "thread_batch": 5,
     "convlist_every": 300,
     "usergroups_every": 3600,
     "rate_per_min": 40,
@@ -100,7 +106,7 @@ _ZERO_OK = {"port", "sweep_overlap", "send_rate_per_hour", "backlog_alert_after"
 _NULLABLE = {"slack_client_id"}
 # Whole numbers; every other number (seconds, shares) may have a fraction.
 _COUNTS = {"team_size", "sweep_max_pages", "socket_max_strikes", "rate_per_min", "history_page",
-           "max_attempts", "port", "send_rate_per_hour"}
+           "max_attempts", "port", "send_rate_per_hour", "thread_recent", "thread_batch"}
 DETECT_MODES = ("auto", "history", "search", "socket")
 
 

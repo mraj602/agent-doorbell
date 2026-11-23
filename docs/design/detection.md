@@ -31,6 +31,15 @@ The answer is three ways to find new messages, chosen by setup:
 In every mode, a conversation or thread with something new turns **hot**: it is read every 30 s
 until nothing new has arrived for 2 minutes. Doorbell then leaves it to the idle schedule again.
 
+**Threads in history mode.** Replies in a thread whose parent is among a conversation's last
+`history_page` (50) messages are seen when the conversation is read: the parent's `latest_reply`
+moves. Only threads you're in that scrolled further back need their own `conversations.replies`.
+Those are followed for `thread_watch_days` (3): the `thread_recent` (3) most recently active
+every `thread_watch_every` (2 min), the rest in turns, `thread_batch` (5) reads per 2 minutes in
+all, least recently read first. 50 older threads cost 2.5 reads a minute, not 25, and each is
+read about every 20 minutes until a reply makes it hot. Search mode needs none of this: one
+sweep returns thread replies with the rest.
+
 ## Slack facts this rests on
 
 | Method | Covers | Per call | Shared budget (per app, per workspace) | Notes |

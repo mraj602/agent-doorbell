@@ -68,11 +68,15 @@ def sweep_interval(d):
 
 
 def history_cost(d, ident, chans):
-    """Idle history polling cost (calls a minute): each conversation and each thread Doorbell
-    keeps watching is read once per cadence_warm."""
+    """Idle history polling cost (calls a minute): each conversation is read once per cadence_warm;
+    threads cost at most thread_recent + thread_batch reads per thread_watch_every, however many
+    are watched (older ones take turns)."""
+    cfg = d.cfg
     threads = d.q1("SELECT count(*) n FROM thread_watch WHERE identity=? AND mine>0 AND expires>?",
                    ident, time.time())["n"]
-    return (len(chans) + threads) * 60 / max(1e-9, d.cfg["cadence_warm"])
+    thread_reads = min(threads, cfg["thread_recent"] + cfg["thread_batch"])
+    return len(chans) * 60 / max(1e-9, cfg["cadence_warm"]) + \
+        thread_reads * 60 / max(1e-9, cfg["thread_watch_every"])
 
 
 def choose(d, ident, chans):

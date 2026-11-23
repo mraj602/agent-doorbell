@@ -55,6 +55,7 @@ class Daemon:
         self.polling = set()       # (identity, channel) currently in the poll set
         self.started = time.time()
         self.api_total = 0
+        self.thread_slot = {}      # identity -> when the next rotating (older) thread may be read
         self.budget_interval = {}  # identity -> seconds needed to poll its whole set within its share
         self.chans = {}            # identity -> conversations in the poll set
         self.modes = {}            # identity -> (mode, why); see detect.choose
@@ -455,15 +456,27 @@ class Daemon:
                         "AND channel=?", (cursor, act, hot_until, now + self.cadence(hot_until, identity), identity, ch))
 
     async def poll_watched_threads(self, identity, chans):
-        """Threads I'm in (or an agent is handling) that have scrolled out of the history window, in
-        history mode; in search and socket mode only threads a sweep made hot."""
+        """Threads I'm in (or an agent is handling) that have scrolled out of the history window.
+
+        Hot threads (new replies lately) are read every cadence_hot in every mode. In history mode
+        also: the thread_recent most recently active threads every thread_watch_every, and the
+        rest in turns, one every thread_watch_every / thread_batch seconds, least recently read
+        first. So the cost stays fixed however many threads are watched. In search and socket
+        mode a sweep or an event makes a thread hot instead."""
         now = time.time()
+        rows = self.q("SELECT * FROM thread_watch WHERE identity=? AND hot_until>? AND next_poll<=? AND expires>?",
+                      identity, now, now, now)
         if self.modes.get(identity, ("history",))[0] == "history":
-            rows = self.q("SELECT * FROM thread_watch WHERE identity=? AND (mine>0 OR hot_until>?) AND next_poll<=? "
-                          "AND expires>?", identity, now, now, now)
-        else:
-            rows = self.q("SELECT * FROM thread_watch WHERE identity=? AND hot_until>? AND next_poll<=? AND expires>?",
-                          identity, now, now, now)
+            cand = [w for w in self.q("SELECT * FROM thread_watch WHERE identity=? AND mine>0 AND "
+                                      "coalesce(hot_until,0)<=? AND expires>?", identity, now, now)
+                    if w["channel"] in chans]
+            cand.sort(key=lambda w: w["watermark"] or w["parent_ts"], reverse=True)
+            k = self.cfg["thread_recent"]
+            rows += [w for w in cand[:k] if w["next_poll"] <= now]
+            due = sorted((w for w in cand[k:] if w["next_poll"] <= now), key=lambda w: w["next_poll"])
+            if due and now >= self.thread_slot.get(identity, 0):
+                rows.append(due[0])
+                self.thread_slot[identity] = now + self.cfg["thread_watch_every"] / self.cfg["thread_batch"]
         for w in rows:
             if w["channel"] not in chans and not (w["hot_until"] or 0) > now:
                 continue
