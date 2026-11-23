@@ -14,6 +14,8 @@ All notable changes to Agent Doorbell are recorded here. The format follows
   was read every 2 minutes, so a busy week of threads could use most of the rate budget.
   `thread_recent` and `thread_batch` in `config.yaml` tune it.
 - Threads are followed for 3 days instead of 7 (`thread_watch_days`).
+- A thread whose parent is still in the conversation's last `history_page` messages is never read
+  on its own: reading the conversation already shows its new replies.
 - `auto` counts threads at that fixed cost when it picks history or search mode.
 
 ## [0.4.2] - 2026-11-23

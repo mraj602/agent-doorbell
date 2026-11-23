@@ -389,3 +389,22 @@ def test_older_threads_take_turns_at_a_fixed_cost(make_env):
     env.mock.post(ch, "late answer", user=alice, thread_ts=parents[0])
     its = env.wait_items(name, timeout=20)
     assert [m["text"] for m in its[0]["messages"]] == ["late answer"]
+
+
+def test_threads_still_in_the_history_window_cost_no_extra_reads(make_env):
+    env = make_env(config={**ROTATE, "history_page": 50})
+    env.add_identity()
+    alice = env.mock.add_user("alice")
+    ch = env.mock.add_channel("quiet")
+    name = env.register({"dms": "none", "channels": [ch]})
+    primed(env, ch)
+    parents = [env.mock.post(ch, f"my question {i}", user=env.me) for i in range(6)]
+    until(lambda: env.db().execute("SELECT count(*) FROM thread_watch WHERE channel=? AND mine>0",
+                                   (ch,)).fetchone()[0] == 6, 15, "6 watched threads")
+    time.sleep(1.5)
+    t0 = time.time()
+    time.sleep(3)
+    assert env.mock.count("conversations.replies", ch, since=t0) == 0
+    env.mock.post(ch, "answer", user=alice, thread_ts=parents[0])   # seen via the parent's latest_reply
+    its = env.wait_items(name)
+    assert [m["text"] for m in its[0]["messages"]] == ["answer"]
