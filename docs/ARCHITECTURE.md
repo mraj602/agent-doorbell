@@ -85,6 +85,7 @@ Agent Doorbell splits the job: a deterministic watcher that costs nothing to run
   | `channels` | Channels to poll for followed people and mentions. |
   | `everyone_in` | Channels where any human's message counts. |
   | `allow_bots` | Bot IDs whose messages count (bots are ignored by default). |
+  | `self_channels` | Conversations where the owner's hand-typed messages are delivered to the agent (as `is_me`) instead of resolving its items. App and Doorbell posts there are never delivered. |
 
 - **Item:** one unit of work: a conversation or thread with one or more new messages. New
   replies to a thread merge into its pending item, so the agent sees one up-to-date item.

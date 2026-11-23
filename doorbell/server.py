@@ -11,10 +11,10 @@ from . import sending, store
 from .slackapi import Slack, read_creds, read_token
 
 SUB_KEYS = {"dms", "group_dms", "channels", "everyone_in", "users", "usergroups",
-            "mentions_of_me", "threads_im_in", "allow_bots"}
+            "mentions_of_me", "threads_im_in", "allow_bots", "self_channels"}
 REQUIRED_SCOPES = {"channels:history", "channels:read", "groups:history", "groups:read", "im:history",
                    "im:read", "mpim:history", "mpim:read", "users:read", "usergroups:read"}
-LIST_KEYS = {"channels", "everyone_in", "users", "usergroups", "allow_bots"}
+LIST_KEYS = {"channels", "everyone_in", "users", "usergroups", "allow_bots", "self_channels"}
 
 
 async def handle(d, reader, writer):
@@ -58,13 +58,20 @@ async def validate_sub(d, identity, sub):
         raise ValueError(f"unknown subscription keys: {sorted(bad)}")
     if sub.get("dms", "followed") not in ("all", "followed", "none"):
         raise ValueError("dms must be all | followed | none")
-    if sub.get("channels") or sub.get("everyone_in"):
+    if sub.get("channels") or sub.get("everyone_in") or sub.get("self_channels"):
         if not d.q1("SELECT 1 FROM conv WHERE identity=? LIMIT 1", identity):
             await d.refresh_convlist(identity)
     await d.resolve_users(identity, sub.get("users"), strict=True)
     await d.usergroup_members(identity, sub.get("usergroups"), strict=True)
     d.resolve_channels(identity, sub.get("channels"), strict=True)
     d.resolve_channels(identity, sub.get("everyone_in"), strict=True)
+    known = lambda ch: d.q1("SELECT 1 FROM conv WHERE identity=? AND channel=?", identity, ch)
+    selfs = d.resolve_channels(identity, sub.get("self_channels"), strict=True)
+    if any(not known(ch) for ch in selfs):
+        await d.refresh_convlist(identity)    # maybe joined since the last refresh
+    for ch in selfs:
+        if not known(ch):
+            raise ValueError(f"self_channels: {ch} is not a conversation you're in")
 
 
 async def op_identity_add(d, req):

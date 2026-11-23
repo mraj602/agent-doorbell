@@ -6,6 +6,13 @@ All notable changes to Agent Doorbell are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `self_channels` subscription key: conversations (your self-DM, a private channel with only
+  you in it) where the messages you type by hand are delivered to the agent, so you can talk to
+  it from Slack. Elsewhere your own messages still resolve items as before. Messages posted
+  through an app or by Doorbell are never delivered there, so an agent's replies can't loop.
+
 ## [0.4.1] - 2026-11-23
 
 ### Fixed

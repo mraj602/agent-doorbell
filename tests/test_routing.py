@@ -255,3 +255,51 @@ def test_first_read_skips_history_from_before_watching(env, alice):
     time.sleep(0.5)
     assert [m["text"] for it in env.items(name) for m in it["messages"]] == ["fresh"]
     assert items
+
+
+# ---------- self_channels: the owner talks to an agent ----------
+def test_self_channel_delivers_what_the_owner_types(env, alice):
+    self_dm = env.mock.add_dm(env.me)
+    yes = env.register({"dms": "none", "self_channels": [self_dm]})
+    no = env.register({"dms": "all"})
+    env.mock.post(self_dm, "agent, summarise today", user=env.me)
+    its = env.wait_items(yes)
+    assert texts(its[0]) == ["agent, summarise today"] and its[0]["messages"][0]["is_me"]
+    env.settle(self_dm)
+    assert env.items(no) == []   # without the opt-in, my own messages stay mine
+
+
+def test_self_channel_never_delivers_app_or_doorbell_posts(env):
+    self_dm = env.mock.add_dm(env.me)
+    name = env.register({"dms": "none", "self_channels": [self_dm]})
+    env.mock.post(self_dm, "an agent's reply", user=env.me, app_id="A08SF47R6P4")
+    env.mock.post(self_dm, "a bot's post", user=env.me, bot_id="B1")
+    env.mock.post(self_dm, "typed", user=env.me)
+    env.wait_items(name)
+    env.settle(self_dm)
+    assert all_texts(env, name) == ["typed"]
+
+
+def test_self_channel_typing_adds_to_the_item_and_an_app_reply_resolves_it(env):
+    self_dm = env.mock.add_dm(env.me)
+    name = env.register({"dms": "none", "self_channels": [self_dm]})
+    env.mock.post(self_dm, "first", user=env.me)
+    env.wait_items(name)
+    env.mock.post(self_dm, "second", user=env.me)
+    until(lambda: all_texts(env, name) == ["first", "second"])
+    assert len(env.items(name)) == 1      # typing again didn't resolve it as "owner replied"
+    env.mock.post(self_dm, "done, here's the summary", user=env.me, app_id="A08SF47R6P4")
+    until(lambda: env.items(name) == [])
+
+
+def test_self_channels_validation_and_live_add(env):
+    with pytest.raises(SystemExit, match="unknown channel"):
+        env.call("register", name="bad5", sub={"self_channels": ["#nope"]})
+    with pytest.raises(SystemExit, match="not a conversation you're in"):
+        env.call("register", name="bad6", sub={"self_channels": ["C0NOTMINE"]})
+    me_only = env.mock.add_channel("me-only", private=True)
+    name = env.register({"dms": "none"})
+    env.call("sub", name=name, action="add", key="self_channels", values=[me_only], why="talk to it")
+    assert env.agent(name)["sub"]["self_channels"] == [me_only]
+    env.mock.post(me_only, "hello agent", user=env.me)
+    assert texts(env.wait_items(name)[0]) == ["hello agent"]

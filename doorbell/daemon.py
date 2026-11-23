@@ -329,6 +329,7 @@ class Daemon:
             "group_dms": bool(s.get("group_dms", False)),
             "channels": self.resolve_channels(ident, s.get("channels")),
             "everyone_in": self.resolve_channels(ident, s.get("everyone_in")),
+            "self_channels": self.resolve_channels(ident, s.get("self_channels")),
             "mentions": bool(s.get("mentions_of_me", True)),
             "threads": bool(s.get("threads_im_in", True)),
             "allow_bots": allow_bots,
@@ -374,7 +375,7 @@ class Daemon:
                     out.add(ch)
                 elif c["kind"] == "mpim" and v["group_dms"]:
                     out.add(ch)
-            out |= {ch for ch in v["channels"] | v["everyone_in"] if ch in convs}
+            out |= {ch for ch in v["channels"] | v["everyone_in"] | v["self_channels"] if ch in convs}
         return out
 
     # ---------- polling ----------
@@ -497,9 +498,20 @@ class Daemon:
                 return
         key = self.thread_key(m)
         if m.get("user") == identity:
-            if not route_only:
-                self.upsert_watch(identity, ch, m.get("thread_ts") or m["ts"], None, mine=1)
-                self.observed_ack(identity, ch, m)
+            if route_only:
+                return
+            self.upsert_watch(identity, ch, m.get("thread_ts") or m["ts"], None, mine=1)
+            # In an agent's self_channels, a message the owner typed is an instruction for that
+            # agent, not a reply that resolves its items. Anything posted through an app or by
+            # Doorbell (an agent's own reply) is never delivered back, so an agent can't loop.
+            to_self = []
+            if self.typed_by_owner(identity, ch, m):
+                for a in self.live_agents(identity):
+                    if m["ts"] > (a["floor_ts"] or "0") and ch in (await self.view(a))["self_channels"]:
+                        to_self.append(a)
+            self.observed_ack(identity, ch, m, skip_agents={a["id"] for a in to_self})
+            for a in to_self:
+                self.deliver(a, ch, key, m)
             return
         conv = self.q1("SELECT * FROM conv WHERE identity=? AND channel=?", identity, ch)
         mention = f"<@{identity}>" in (m.get("text") or "")
@@ -557,17 +569,26 @@ class Daemon:
         store.audit(self.db, "deliver", a["name"], seq=seq, channel=ch, ts=m["ts"])
         self.wake(a["id"])
 
-    def observed_ack(self, identity, ch, m):
+    def sent_by_doorbell(self, identity, ch, m):
+        return bool(self.q1("SELECT 1 FROM sent WHERE identity=? AND channel=? AND ts=?", identity, ch, m["ts"]))
+
+    def typed_by_owner(self, identity, ch, m):
+        """My message typed by hand in Slack: not posted through any app or bot, and not by Doorbell."""
+        return not (m.get("app_id") or m.get("bot_id") or (identity, ch) in self.sending_to
+                    or self.sent_by_doorbell(identity, ch, m))
+
+    def observed_ack(self, identity, ch, m, skip_agents=()):
         """A message from me after an open item resolves it: as 'replied' if an agent app sent it."""
         if (identity, ch) in self.sending_to:
             return   # Doorbell is posting here right now; its own message isn't the owner's reply
-        by_agent = m.get("app_id") in self.cfg["agent_app_ids"] or bool(
-            self.q1("SELECT 1 FROM sent WHERE identity=? AND channel=? AND ts=?", identity, ch, m["ts"]))
+        by_agent = m.get("app_id") in self.cfg["agent_app_ids"] or self.sent_by_doorbell(identity, ch, m)
         key = self.thread_key(m)
         rows = self.q("SELECT i.*, a.on_manual_reply, a.name FROM items i JOIN agents a ON a.id=i.agent_id "
                       "WHERE a.identity=? AND i.channel=? AND i.state IN ('pending','claimed') AND i.last_ts < ?",
                       identity, ch, m["ts"])
         for it in rows:
+            if it["agent_id"] in skip_agents:
+                continue
             in_item = self.q1("SELECT 1 FROM item_msgs WHERE item_seq=? AND ts=?", it["seq"], key)
             if it["thread_key"] != key and not (key != "main" and in_item):
                 continue

@@ -661,6 +661,7 @@ How they share the watcher:
 | `channels` | `["#proj-x"]` | Channels to poll for followed people and mentions. Private channels: you must be a member. |
 | `everyone_in` | `["#incidents"]` | Channels where any human's message counts. |
 | `allow_bots` | `["B012ABCDEF"]` | Bots whose messages count (bots are ignored otherwise). |
+| `self_channels` | `["D012SELFDM"]` | Conversations where what *you* type is for the agent, e.g. your self-DM or a private channel with only you in it. Your own messages normally never reach an agent (they resolve its items instead); here the ones you type by hand do. Anything posted through an app (including the agent's own replies) or by Doorbell is never delivered, so an agent can't talk to itself. |
 
 Change a running agent with `doorbell sub add|remove|set <key> <values> --why "..."` (audited,
 with a notification). `doorbell register` resets the subscription to `sub.yaml`, so put
