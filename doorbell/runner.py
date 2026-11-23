@@ -21,6 +21,7 @@ and become `stuck` after `max_attempts`, which also stops the loop.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -60,6 +61,19 @@ def ensure_registered(name, folder):
             time.sleep(3)
 
 
+NO_HOLDER = re.compile(r"holds tag|no (live )?holders?\b", re.I)
+NO_HOLDER_HINT = (" (hint: nobody holds that tag. The receiving session may have been ended for being idle; "
+                  "restart it and pin it in `claude agents` with Ctrl+T so it stays)")
+
+
+def report_handoff(name, ok, reason=None):
+    """Tell the daemon how the last handoff went, so `doorbell status` can show it. Best effort."""
+    try:
+        cli.call("handoff_report", name=name, ok=ok, reason=reason)
+    except (cli.DaemonDown, SystemExit):
+        pass
+
+
 def hand_off(name, handoff, folder, env, timeout, ok):
     """Claim only the new items and pipe them to the handoff command.
     Returns "handed", "empty" (nothing new) or "failed"."""
@@ -83,8 +97,11 @@ def hand_off(name, handoff, folder, env, timeout, ok):
     said = "; ".join(said[-5:])   # a broadcast prints one line per receiver
     if rc in ok:
         log(f"handed off {seqs} ({len(payload)} bytes, exit {rc}){': ' + said if said else ''}")
+        report_handoff(name, True)
         return "handed"
-    log(f"handoff failed for {seqs} (exit {rc}){': ' + said if said else ''}")
+    hint = NO_HOLDER_HINT if NO_HOLDER.search(said) else ""
+    log(f"handoff failed for {seqs} (exit {rc}){': ' + said if said else ''}{hint}")
+    report_handoff(name, False, f"exit {rc}" + (f": {said}" if said else ""))
     return "failed"
 
 

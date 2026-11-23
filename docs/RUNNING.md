@@ -47,6 +47,18 @@ doorbell wait  (blocks, no tokens)  ──▶  claude -p "/agent-doorbell:handle
 The trade-off: a run remembers nothing from earlier runs except what is in files. Put durable
 knowledge in `AGENTS.md` or notes the agent can read.
 
+### Keep the receiving session running
+
+If the dispatcher uses `--handoff` to a live Claude Code session (for example
+`wy peers send tag:<tag> --one --stdin`), that session must stay alive. Claude Code retires a
+background session that is idle with nothing in flight after about an hour (about 8 hours when
+bridged to Remote Control), and a receiver waiting for pushed handoffs counts as idle. Pin it in
+`claude agents` with Ctrl+T. A pinned session is never idle-retired and is restarted in place
+after an update or a crash; a reboot still ends it, and pinning does not revive a session that
+was already retired (`claude respawn <id>` does). Add a fallback command after `--` so batches
+are still handled while the receiver is down. A failed handoff is logged by the dispatcher and
+shown under `handoff` for the agent in `doorbell status`.
+
 ### Cost control for headless runs
 
 - Pick a model per agent: `claude -p "/agent-doorbell:handle" --model sonnet --allowedTools ...`.
